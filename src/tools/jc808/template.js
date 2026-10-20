@@ -6,7 +6,7 @@ export const TEMPLATE = `
     <div class="brand">
       <h1>JC&#8209;808</h1>
       <span class="model">Rhythm Composer</span>
-      <span class="sub">Twelve analogue-modelled voices, sequencer &amp; synthesiser — built from scratch with the Web Audio API.</span>
+      <span class="sub">Twelve analogue-modelled voices, sequencer, two-lane synth recorder — built from scratch with the Web Audio API.</span>
     </div>
     <nav>
       <a href="#" data-jump="help">Shortcuts</a>
@@ -78,8 +78,26 @@ export const TEMPLATE = `
 
   <section class="panel">
     <div class="panel-head">
-      <h2 class="panel-title">Synthesiser</h2>
+      <h2 class="panel-title">Synth Lanes</h2>
+      <div class="track-tools">
+        <button class="btn rec-btn" id="jc-recBtn" type="button" aria-pressed="false" title="Record the keys onto the selected lane (R)"><span class="rec-dot"></span>Rec</button>
+        <span class="readout track-readout" title="Bar and beat of the selected lane">
+          <span class="value" id="jc-trackPos">1.1</span>
+          <span class="label">Bar · Beat</span>
+        </span>
+        <span class="panel-title" style="letter-spacing:.1em;text-transform:none;">
+          Rec writes to the selected lane · <kbd>Q</kbd> switches lanes · each lane loops on its own length · click a note to remove it
+        </span>
+      </div>
+    </div>
+    <div class="lanes" id="jc-lanes"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head">
+      <h2 class="panel-title">Synthesiser · <span id="jc-synthLane">Lead</span></h2>
       <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <div class="seg" id="jc-laneSeg" title="Which lane the synth panel and the keys play"></div>
         <button class="btn" id="jc-monoBtn" type="button">Poly</button>
         <button class="btn" id="jc-octDown" type="button">Oct &minus;</button>
         <span class="readout" style="min-width:64px;padding:5px 10px;">
@@ -158,6 +176,16 @@ export const TEMPLATE = `
         </dl>
       </div>
       <div>
+        <h4>Synth lanes</h4>
+        <dl>
+          <dt><kbd>R</kbd></dt><dd>Record on / off — onto the selected lane</dd>
+          <dt><kbd>Q</kbd></dt><dd>Switch between the Bass and Lead lanes</dd>
+          <dt>Rec while stopped</dt><dd>One-bar count-in, then the take starts at bar 1</dd>
+          <dt>Rec while playing</dt><dd>Punches in — every pass overdubs onto the loop</dd>
+          <dt>Click a note</dt><dd>Removes it (Undo brings it back)</dd>
+        </dl>
+      </div>
+      <div>
         <h4>Knobs</h4>
         <dl>
           <dt>Drag / wheel</dt><dd>Adjust</dd>
@@ -172,7 +200,9 @@ export const TEMPLATE = `
           <dt>Accent</dt><dd>The bottom lane lifts every hit on that step</dd>
           <dt>Arp</dt><dd>Runs off the sequencer clock — press play, then hold keys</dd>
           <dt>Latch</dt><dd>Each key toggles in and out of the chord; Panic clears it</dd>
-          <dt>Export</dt><dd>Renders two passes of the pattern (or the chain) to WAV</dd>
+          <dt>Lanes</dt><dd>Bass and Lead each have their own patch, loop length and quantize; a bar is 16 steps, so a 2-bar bass can loop under a 16-bar lead</dd>
+          <dt>Arp + Rec</dt><dd>The arpeggio is written to the lane as notes, so the take plays back on its own</dd>
+          <dt>Export</dt><dd>Renders the pattern (or the chain) with both lanes to WAV — two drum passes, or the longest lane</dd>
         </dl>
       </div>
     </div>

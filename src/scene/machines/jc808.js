@@ -129,6 +129,9 @@ export function buildJC808(parent, studio) {
   const playMat = ledMat(0x2f8f57, 0.15);
   const play = cyl(0.022, 0.024, 0.016, playMat, { parent: inst, x: 0.17, y: 0.068, z: 0.12 });
   cyl(0.026, 0.026, 0.006, std(0x3a3a40, { metal: 0.6 }), { parent: inst, x: 0.17, y: 0.061, z: 0.12 });
+  // REC button: glows and pulses while a synth take is being recorded
+  const recMat = ledMat(0xff2020, 0.03);
+  box(0.022, 0.012, 0.022, recMat, { parent: inst, x: 0.2, y: 0.066, z: 0.15, r: 0.003 });
   const banks = [];
   for (let b = 0; b < 4; b++) {
     const mat = ledMat(0xff6b2c, 0.03);
@@ -218,6 +221,7 @@ export function buildJC808(parent, studio) {
       st.led.color.setRGB(head ? 3 : on ? 0.9 : 0.12, head ? 0.6 : on ? 0.12 : 0.02, head ? 0.3 : 0.02);
     }
     playMat.emissiveIntensity = playing ? 1.4 + Math.sin(t * 8) * 0.2 : 0.15;
+    recMat.emissiveIntensity = s && s.recording ? 1.7 + Math.sin(t * 7) * 0.7 : 0.03;
     const bank = s ? s.bank : 0;
     banks.forEach((mat, i) => { mat.emissiveIntensity = i === bank ? 1.6 : 0.03; });
     // keys pressed by the synth

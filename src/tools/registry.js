@@ -3,7 +3,7 @@
 export const TOOLS = {
   jc808: {
     title: "JC-808 Rhythm Composer",
-    subtitle: "12 analogue-modelled voices · 16-step sequencer · synth & arpeggiator",
+    subtitle: "12 analogue-modelled voices · 16-step sequencer · bass & lead synth lanes with a looping recorder",
     origin: "jc-808/app.js",
     width: "",
     load: () => import("./jc808/index.js")
@@ -32,12 +32,11 @@ export const TOOLS = {
   },
   radio: {
     title: "Room 808 FM",
-    subtitle: "Search the Internet Archive · stream · send tracks to any machine",
-    origin: "Fronend_Files/server/Index.js",
+    subtitle: "Local & national stations · streams into the room · add your own",
+    origin: "new · stations in src/tools/radio/stations.js",
     width: "medium",
     layout: "side",
-    load: null,
-    wip: "The turntable digs through the Internet Archive for chiptunes (same search the ChipWorld web app's server did, now straight from the browser) and plays them through the room."
+    load: () => import("./radio/index.js")
   },
   chipify: {
     title: "CHIPIFY",

@@ -9,6 +9,13 @@
 // it plays through the room's audio bus, its DOM is scoped to the panel,
 // keys only respond while its panel is open, and it publishes its
 // playhead/pattern so the 3D JC-808 on the stand lights up in time.
+import { writeMidi, parseMidi } from "../../core/midi.js";
+import {
+  STEPS_PER_BAR, BAR_CHOICES, GRIDS, emptyTrack, trackSteps, wrapPos, quantizeStart,
+  addNote, notesStartingInStep, noteAt, pitchRange, normaliseTrack, serialiseTrack,
+  trackToMidiNotes, barBeat
+} from "./track.js";
+
 export function mountJC808(root, studio) {
 
   /* ---------- small helpers ---------- */
@@ -45,6 +52,24 @@ export function mountJC808(root, studio) {
     { id: "MA", name: "Maracas",    color: "#d9d2c2", key: "=", def: { level: 0.55, tune: 0.50, decay: 0.25 } }
   ];
   const VOICE_IDS = VOICES.map((v) => v.id);
+
+  // Two synth lanes — a bass and a lead — each with its own patch and its own
+  // looping take (see track.js). The synth panel, the keyboard and Rec always
+  // address the selected lane; both lanes play back.
+  const LEAD_PATCH = {
+    wave: "sawtooth", octave: 0, detune: 8, sub: 0.25, cutoff: 0.62, reso: 3, envAmt: 0.45,
+    attack: 0.01, decay: 0.25, sustain: 0.55, release: 0.35, glide: 0, mono: false, level: 0.7,
+    arp: false, arpMode: "up", arpRate: "1/16", arpOct: 1, arpGate: 0.6, latch: false
+  };
+  const BASS_PATCH = Object.assign({}, LEAD_PATCH, {
+    octave: -1, detune: 4, sub: 0.6, cutoff: 0.42, reso: 4, envAmt: 0.5,
+    attack: 0.005, decay: 0.22, sustain: 0.3, release: 0.16, mono: true, level: 0.75
+  });
+  const LANES = [
+    { id: "bass", name: "Bass", color: "#e8bf2c", program: 38, def: BASS_PATCH },
+    { id: "lead", name: "Lead", color: "#ff5b1f", program: 81, def: LEAD_PATCH }
+  ];
+  const PATCH_KEYS = Object.keys(LEAD_PATCH);
 
   /* ============================================================
      2. AUDIO ENGINE
@@ -103,7 +128,12 @@ export function mountJC808(root, studio) {
 
     E.drumBus = ctx.createGain();
     E.synthBus = ctx.createGain();
-    E.synthBus.gain.value = 0.7;
+    E.lanes = LANES.map(function () {
+      const g = ctx.createGain();
+      g.gain.value = 0.7;
+      g.connect(E.synthBus);
+      return g;
+    });
 
     // sync'd stereo-ish delay
     E.delay = ctx.createDelay(2);
@@ -426,31 +456,13 @@ export function mountJC808(root, studio) {
     voices: {},
     mutes: {},
     solos: {},
-    synth: {
-      wave: "sawtooth",
-      octave: 0,
-      detune: 8,
-      sub: 0.25,
-      cutoff: 0.62,
-      reso: 3,
-      envAmt: 0.45,
-      attack: 0.01,
-      decay: 0.25,
-      sustain: 0.55,
-      release: 0.35,
-      glide: 0,
-      mono: false,
-      level: 0.7,
-      delay: 0.18,
-      reverb: 0.2,
-      arp: false,
-      arpMode: "up",
-      arpRate: "1/16",
-      arpOct: 1,
-      arpGate: 0.6,
-      latch: false
-    }
+    lane: 1,
+    lanes: LANES.map(function (l) { return { synth: Object.assign({}, l.def), track: emptyTrack() }; }),
+    fx: { delay: 0.18, reverb: 0.2 }   // the sends are shared by both lanes
   };
+  // the synth panel, the keyboard and the recorder always mean the selected lane
+  Object.defineProperty(state, "synth", { get: function () { return state.lanes[state.lane].synth; } });
+  Object.defineProperty(state, "track", { get: function () { return state.lanes[state.lane].track; } });
 
   VOICES.forEach(function (v) {
     state.voices[v.id] = Object.assign({}, v.def);
@@ -460,7 +472,11 @@ export function mountJC808(root, studio) {
 
   const undoStack = [];
   function snapshot(label) {
-    undoStack.push({ label: label, banks: JSON.parse(JSON.stringify(state.banks)) });
+    undoStack.push({
+      label: label,
+      banks: JSON.parse(JSON.stringify(state.banks)),
+      tracks: state.lanes.map(function (l) { return serialiseTrack(l.track); })
+    });
     if (undoStack.length > 25) undoStack.shift();
     const b = $("#jc-undoBtn");
     if (b) b.disabled = false;
@@ -469,7 +485,10 @@ export function mountJC808(root, studio) {
     const s = undoStack.pop();
     if (!s) return toast("Nothing to undo");
     state.banks = s.banks;
+    s.tracks.forEach(function (t, i) { state.lanes[i].track = normaliseTrack(t); });
+    silenceTrack();
     refreshGrid();
+    syncTrackUI();
     save();
     toast("Undo: " + s.label);
     if (!undoStack.length) $("#jc-undoBtn").disabled = true;
@@ -482,6 +501,8 @@ export function mountJC808(root, studio) {
     get playing() { return state.playing; },
     get bank() { return state.bank; },
     get bpm() { return state.bpm; },
+    get recording() { return recording; },
+    get lane() { return state.lane; },
     step: -1,
     pattern: new Array(16).fill(false),
     keys: new Set(),
@@ -539,13 +560,19 @@ export function mountJC808(root, studio) {
 
   function scheduler() {
     const now = ctx.currentTime;
+    pruneTrackVoices(now);
     while (nextStepTime < now + HORIZON) {
       const t = swungTime(currentStep, nextStepTime);
       emitStep(engine, playBank, currentStep, t);
-      scheduleArp(engine, currentStep, nextStepTime);
+      scheduleArp(engine, currentStep, nextStepTime, songStep);
+      scheduleTrack(engine, songStep, nextStepTime, true);
+      if (songStep < 0) scheduleCountIn(engine, songStep, nextStepTime);
       drawQueue.push({ step: currentStep, bank: playBank, time: t });
+      anchorStep = songStep;
+      anchorTime = nextStepTime;
       // advance
       currentStep++;
+      songStep++;
       if (currentStep >= state.banks[playBank].length) {
         currentStep = 0;
         if (state.chain) {
@@ -560,13 +587,19 @@ export function mountJC808(root, studio) {
     timerId = setTimeout(scheduler, LOOKAHEAD);
   }
 
-  function play() {
+  // countIn: start one bar early so a take can begin on bar 1 (Rec from stopped)
+  function play(countIn) {
     ensureAudio();
     if (state.playing) return;
     state.playing = true;
     playBank = state.bank;
     currentStep = 0;
+    songStep = countIn ? -COUNT_IN : 0;
     nextStepTime = ctx.currentTime + 0.08;
+    anchorStep = songStep;
+    anchorTime = nextStepTime;
+    state.lanes.forEach(function (l) { l.track.notes.forEach(function (n) { delete n._abs; }); });
+    rollDirty = true;
     scheduler();
     const b = $("#jc-playBtn");
     b.classList.add("playing");
@@ -575,12 +608,15 @@ export function mountJC808(root, studio) {
   }
 
   function stop() {
+    if (recording) setRecording(false);   // closes held notes at the stop point
     state.playing = false;
     clearTimeout(timerId);
     timerId = null;
     drawQueue.length = 0;
     clearPlayhead();
+    silenceTrack();
     allNotesOff();
+    rollDirty = true;
     const b = $("#jc-playBtn");
     b.classList.remove("playing");
     b.setAttribute("aria-label", "Play");
@@ -608,9 +644,9 @@ export function mountJC808(root, studio) {
     if (!engine) return;
     engine.master.gain.value = state.volume;
     engine.drive.curve = driveCurve(state.drive);
-    engine.synthBus.gain.value = state.synth.level;
-    engine.delayMix.gain.value = state.synth.delay;
-    engine.reverbMix.gain.value = state.synth.reverb;
+    engine.lanes.forEach(function (g, i) { g.gain.value = state.lanes[i].synth.level; });
+    engine.delayMix.gain.value = state.fx.delay;
+    engine.reverbMix.gain.value = state.fx.reverb;
     engine.delay.delayTime.value = clamp((60 / state.bpm) * 0.75, 0.02, 1.9);
   }
 
@@ -626,8 +662,13 @@ export function mountJC808(root, studio) {
 
   function startNote(midi, when, dur) {
     ensureAudio();
-    const S = state.synth;
-    const t = when != null ? when : ctx.currentTime;
+    return synthNote(engine, midi, when != null ? when : ctx.currentTime, dur, 1, state.lane);
+  }
+
+  // one voice of lane `li` on any engine (live or offline); dur in seconds, or null to hold
+  function synthNote(E, midi, t, dur, vel, li) {
+    const S = state.lanes[li].synth;
+    const ctx = E.ctx;
     const freq = mtof(midi + S.octave * 12);
 
     const amp = ctx.createGain();
@@ -665,9 +706,9 @@ export function mountJC808(root, studio) {
       oscs.push(sub);
     }
 
-    filt.connect(amp).connect(engine.synthBus);
+    filt.connect(amp).connect(E.lanes[li]);
 
-    const peak = 0.32;
+    const peak = 0.32 * (vel == null ? 1 : vel);
     amp.gain.cancelScheduledValues(t);
     amp.gain.setValueAtTime(0.0001, t);
     amp.gain.exponentialRampToValueAtTime(peak, t + Math.max(0.004, S.attack));
@@ -677,7 +718,7 @@ export function mountJC808(root, studio) {
     );
 
     oscs.forEach(function (o) { o.start(t); });
-    const v = { oscs: oscs, amp: amp, filt: filt, midi: midi, started: t };
+    const v = { oscs: oscs, amp: amp, filt: filt, midi: midi, started: t, E: E, S: S };
 
     if (dur != null) {
       endNote(v, t + dur);
@@ -686,8 +727,8 @@ export function mountJC808(root, studio) {
   }
 
   function endNote(v, when) {
-    const S = state.synth;
-    const t = Math.max(when != null ? when : ctx.currentTime, v.started + 0.005);
+    const S = v.S;
+    const t = Math.max(when != null ? when : v.E.ctx.currentTime, v.started + 0.005);
     const g = v.amp.gain;
     g.cancelScheduledValues(t);
     g.setValueAtTime(Math.max(0.0002, g.value), t);
@@ -697,33 +738,47 @@ export function mountJC808(root, studio) {
     });
   }
 
+  // silence a live voice right now, even one scheduled but not yet started
+  function killVoice(v) {
+    const now = ctx.currentTime;
+    const g = v.amp.gain;
+    g.cancelScheduledValues(now);
+    g.setValueAtTime(Math.max(0.0002, g.value), now);
+    g.exponentialRampToValueAtTime(0.0001, now + 0.03);
+    v.oscs.forEach(function (o) { try { o.stop(now + 0.05); } catch (e) {} });
+    setTimeout(function () { try { v.amp.disconnect(); } catch (e) {} }, 120);
+  }
+
   function noteOn(midi) {
     if (held.has(midi)) return;
     if (heldOrder.indexOf(midi) === -1) heldOrder.push(midi);
     if (state.synth.arp) { paintKey(midi, true); return; }  // arp plays it, not us
     if (state.synth.mono) {
       // stealing a voice must clear its key too, or mono still looks polyphonic
-      held.forEach(function (v, m) { endNote(v); held.delete(m); paintKey(m, false); });
+      held.forEach(function (v, m) { endNote(v); held.delete(m); paintKey(m, false); recNoteOff(m); });
     }
     if (held.size >= 10) {
       const first = held.keys().next().value;
       endNote(held.get(first));
       held.delete(first);
       paintKey(first, false);
+      recNoteOff(first);
     }
     held.set(midi, startNote(midi));
     paintKey(midi, true);
+    recNoteOn(midi);
   }
 
   function noteOff(midi) {
     const i = heldOrder.indexOf(midi);
     if (i > -1) heldOrder.splice(i, 1);
     const v = held.get(midi);
-    if (v) { endNote(v); held.delete(midi); }
+    if (v) { endNote(v); held.delete(midi); recNoteOff(midi); }
     if (!state.synth.latch || !state.synth.arp) paintKey(midi, false);
   }
 
   function allNotesOff(clearLatch) {
+    recCloseAll();
     held.forEach(function (v) { endNote(v); });
     held.clear();
     heldOrder.length = 0;
@@ -755,7 +810,7 @@ export function mountJC808(root, studio) {
     return out;
   }
 
-  function scheduleArp(E, step, baseTime) {
+  function scheduleArp(E, step, baseTime, song) {
     const S = state.synth;
     if (!S.arp) return;
     const notes = arpNotes();
@@ -780,7 +835,458 @@ export function mountJC808(root, studio) {
       else { m = notes[arpIndex % notes.length]; arpIndex++; }
       startNote(m, t, gateLen);
       drawQueue.push({ step: -1, key: m, time: t });
+      // the arp's notes go onto the lane as real notes, so the take plays
+      // back without the arp (or the keys) held
+      if (recording && song != null) {
+        const pos = song + (t - baseTime) / sd;
+        if (pos >= 0) commitNote(m, pos, gateLen / sd, 1);
+      }
     });
+  }
+
+  /* ============================================================
+     5b. SYNTH LANES — record, play back, piano rolls
+     ============================================================ */
+
+  let recording = false;          // armed: keys (and the arp) are written to the selected lane
+  const recOpen = new Map();      // midi -> absolute song position of the key press
+  const trackVoices = [];         // scheduled playback voices, so stop() can silence them
+
+  // The song clock: steps since play started, negative during the one-bar
+  // count-in. Each lane's position is this folded into its own loop length,
+  // so a two-bar bass can run under a sixteen-bar lead over any drum pattern.
+  const COUNT_IN = STEPS_PER_BAR;
+  let songStep = 0;
+  let anchorStep = 0, anchorTime = 0;   // last scheduled step and its straight-grid time
+
+  function songPos(at) {
+    if (!ctx || !state.playing) return 0;
+    const t = at != null ? at : ctx.currentTime;
+    return anchorStep + (t - anchorTime) / stepDur();
+  }
+  // keys are played against what the player hears, which runs one output
+  // latency behind the audio clock
+  function inputPos() {
+    return songPos(ctx.currentTime - (ctx.outputLatency || ctx.baseLatency || 0));
+  }
+
+  function scheduleTrack(E, step, baseTime, isLive) {
+    const sd = stepDur();
+    state.lanes.forEach(function (lane, li) {
+      const T = lane.track;
+      if (T.mute || !T.notes.length) return;
+      const steps = trackSteps(T);
+      const pos = wrapPos(step, steps);
+      notesStartingInStep(T, pos).forEach(function (hit) {
+        const n = hit.note;
+        // a note recorded moments ago must not be re-triggered by the pass it
+        // was played in (quantize can snap it onto a step still to come)
+        if (isLive && n._abs != null && step + hit.offset - n._abs < 8) return;
+        const t = hit.offset === 0 ? swungTime(pos, baseTime) : baseTime + hit.offset * sd;
+        const dur = Math.max(0.01, n.d * sd);
+        const v = synthNote(E, n.m, t, dur, n.v, li);
+        if (isLive) {
+          trackVoices.push({ v: v, until: t + dur + Math.max(0.02, lane.synth.release) + 0.1 });
+          drawQueue.push({ step: -1, key: n.m, time: t, hold: dur });
+        }
+      });
+    });
+  }
+
+  function pruneTrackVoices(now) {
+    for (let i = trackVoices.length - 1; i >= 0; i--) {
+      if (trackVoices[i].until < now) trackVoices.splice(i, 1);
+    }
+  }
+  function silenceTrack() {
+    if (!ctx) return;
+    trackVoices.forEach(function (tv) { killVoice(tv.v); });
+    trackVoices.length = 0;
+  }
+
+  // count-in: a click on each beat of the bar before the take starts
+  function scheduleCountIn(E, step, t) {
+    if (step % 4 !== 0) return;
+    const first = step === -COUNT_IN;
+    const o = E.ctx.createOscillator();
+    o.type = "sine";
+    o.frequency.value = first ? 1760 : 1175;
+    const g = E.ctx.createGain();
+    env(g.gain, t, first ? 0.5 : 0.32, 0.001, 0.06);
+    o.connect(g).connect(E.master);
+    o.start(t);
+    o.stop(t + 0.1);
+  }
+
+  /* ---------- recording ---------- */
+
+  function recNoteOn(midi) {
+    if (!recording || !state.playing) return;
+    const pos = inputPos();
+    if (pos < 0) return;             // still counting in
+    recOpen.set(midi, pos);
+    rollDirty = true;
+  }
+  function recNoteOff(midi) {
+    const start = recOpen.get(midi);
+    if (start == null) return;
+    recOpen.delete(midi);
+    commitNote(midi, start, inputPos() - start, 1);
+  }
+  function recCloseAll() {
+    if (!recOpen.size) return;
+    const end = inputPos();
+    recOpen.forEach(function (start, midi) { commitNote(midi, start, end - start, 1); });
+    recOpen.clear();
+  }
+  function commitNote(midi, absStart, dur, vel) {
+    const T = state.track;
+    const s = wrapPos(absStart, trackSteps(T));
+    // a looping arp writes the same note at the same spot every pass — once is enough
+    const dup = T.notes.some(function (n) { return n.m === midi && Math.abs(n.s - s) < 0.02; });
+    if (!dup) addNote(T, { m: midi, s: s, d: dur, v: vel, _abs: absStart });
+    rollDirty = true;
+    save();
+  }
+
+  function setRecording(on) {
+    if (on === recording) return;
+    if (on) {
+      snapshot("record " + LANES[state.lane].name.toLowerCase());
+      recording = true;
+      if (!state.playing) { play(true); toast("Count-in… the " + LANES[state.lane].name + " take starts at bar 1"); }
+      else toast("Recording — overdubbing onto the " + LANES[state.lane].name + " lane");
+    } else {
+      recCloseAll();
+      recording = false;
+    }
+    const b = $("#jc-recBtn");
+    b.classList.toggle("on", recording);
+    b.setAttribute("aria-pressed", recording ? "true" : "false");
+    rollDirty = true;
+  }
+  function toggleRecording() { setRecording(!recording); }
+
+  function selectLane(i) {
+    if (i === state.lane) return;
+    allNotesOff(true);          // notes and open recordings belong to the lane they were played on
+    downKeys.clear();
+    state.lane = i;
+    arpIndex = 0;
+    refreshSynthUI();
+    syncTrackUI();
+    toast(LANES[i].name + " lane selected — the keys, the synth panel and Rec now mean this lane");
+    save();
+  }
+
+  /* ---------- piano rolls ---------- */
+
+  const laneUI = [];             // per lane: { el, canvas, ctx, barsSel, quantSel, mute, count, rows }
+  let rollDirty = true, lastPosText = "";
+  const ROLL_TOP = 14;           // CSS px for the bar-number strip
+  const BLACK_SEMIS = [1, 3, 6, 8, 10];
+
+  function sizeRolls() {
+    const r = window.devicePixelRatio || 1;
+    laneUI.forEach(function (u) {
+      const rect = u.canvas.getBoundingClientRect();
+      u.canvas.width = Math.max(1, rect.width * r);
+      u.canvas.height = Math.max(1, rect.height * r);
+      u.ctx = u.canvas.getContext("2d");
+    });
+    rollDirty = true;
+  }
+
+  function drawRoll(li) {
+    const u = laneUI[li];
+    if (!u || !u.ctx) return;
+    const T = state.lanes[li].track;
+    const selected = li === state.lane;
+    const color = LANES[li].color;
+    const steps = trackSteps(T);
+    const grid = GRIDS[T.quantize] || 0;
+    const w = u.canvas.width, h = u.canvas.height;
+    const r = window.devicePixelRatio || 1;
+    const g = u.ctx;
+    const range = pitchRange(T.notes.filter(function (n) { return n.s < steps; }));
+    u.rows = range;
+    const rows = range.hi - range.lo + 1;
+    const top = ROLL_TOP * r;
+    const rowH = (h - top) / rows;
+    const xOf = function (pos) { return (pos / steps) * w; };
+    const yOf = function (midi) { return top + (range.hi - midi) * rowH; };
+
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = "#131316";
+    g.fillRect(0, 0, w, h);
+
+    // black-key rows and a line under every C
+    g.fillStyle = "rgba(255,255,255,0.03)";
+    for (let m = range.lo; m <= range.hi; m++) {
+      if (BLACK_SEMIS.indexOf(m % 12) > -1) g.fillRect(0, yOf(m), w, rowH);
+    }
+    g.strokeStyle = "rgba(255,255,255,0.09)";
+    g.lineWidth = 1;
+    for (let m = range.lo; m <= range.hi; m++) {
+      if (m % 12 === 0) {
+        const y = Math.round(yOf(m) + rowH) + 0.5;
+        g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke();
+      }
+    }
+    // beat and bar lines
+    for (let s = 0; s < steps; s += 4) {
+      const isBar = s % STEPS_PER_BAR === 0;
+      g.strokeStyle = isBar ? "rgba(236,229,213,0.24)" : "rgba(236,229,213,0.07)";
+      const x = Math.round(xOf(s)) + 0.5;
+      g.beginPath(); g.moveTo(x, isBar ? 0 : top); g.lineTo(x, h); g.stroke();
+    }
+    // bar numbers
+    g.fillStyle = "#6f6a63";
+    g.font = (9 * r) + "px ui-monospace, Menlo, monospace";
+    g.textBaseline = "top";
+    g.textAlign = "left";
+    const every = T.bars > 32 ? 4 : T.bars > 16 ? 2 : 1;
+    for (let b = 0; b < T.bars; b += every) g.fillText(String(b + 1), xOf(b * STEPS_PER_BAR) + 3 * r, 2 * r);
+
+    // notes, drawn where they will play (quantized); a long one wraps round the loop
+    const noteH = Math.max(2 * r, rowH - 1.5 * r);
+    const bar = function (x, y, len) {
+      g.fillRect(x, y, Math.min(len, w - x), noteH);
+      if (x + len > w) g.fillRect(0, y, x + len - w, noteH);
+    };
+    g.globalAlpha = T.mute ? 0.35 : selected ? 1 : 0.6;
+    T.notes.forEach(function (n) {
+      if (n.s >= steps || n.m < range.lo || n.m > range.hi) return;
+      const x = xOf(quantizeStart(n.s, grid, steps));
+      const y = yOf(n.m) + (rowH - noteH) / 2;
+      const len = Math.max(2 * r, xOf(n.d));
+      g.fillStyle = color;
+      bar(x, y, len);
+      g.fillStyle = "rgba(255,255,255,0.4)";
+      g.fillRect(x, y, Math.min(1.5 * r, len), noteH);
+    });
+    g.globalAlpha = 1;
+
+    // keys held right now while recording, growing from where they were pressed
+    if (selected && recOpen.size && state.playing) {
+      const now = inputPos();
+      g.fillStyle = "#ff3a3a";
+      recOpen.forEach(function (start, midi) {
+        if (midi < range.lo || midi > range.hi) return;
+        bar(xOf(wrapPos(start, steps)), yOf(midi) + (rowH - noteH) / 2, Math.max(2 * r, xOf(Math.max(0, now - start))));
+      });
+    }
+
+    if (state.playing) {
+      const pos = songPos();
+      if (pos < 0 && selected && recording) {
+        g.fillStyle = "rgba(216,56,44,0.12)";
+        g.fillRect(0, top, w, h - top);
+        g.fillStyle = "#ff8a7a";
+        g.font = "600 " + (11 * r) + "px ui-monospace, Menlo, monospace";
+        g.textBaseline = "middle";
+        g.textAlign = "center";
+        g.fillText("COUNT-IN  " + (Math.floor((pos + COUNT_IN) / 4) + 1), w / 2, (h + top) / 2);
+      }
+      const x = Math.round(xOf(wrapPos(pos, steps))) + 0.5;
+      g.strokeStyle = selected && recording ? "#ff3a3a" : selected ? "#ece5d5" : "rgba(236,229,213,0.5)";
+      g.lineWidth = 1.5 * r;
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke();
+    } else if (!T.notes.length) {
+      g.fillStyle = "#6f6a63";
+      g.font = (11 * r) + "px 'Helvetica Neue', Helvetica, Arial, sans-serif";
+      g.textBaseline = "middle";
+      g.textAlign = "center";
+      g.fillText(selected
+        ? "Press Rec and play the keys — this lane loops every " + T.bars + (T.bars === 1 ? " bar" : " bars")
+        : "Click " + LANES[li].name + " to select this lane, then Rec", w / 2, (h + top) / 2);
+    }
+  }
+
+  // where a pointer event lands on a lane's roll, in steps and midi
+  function rollHit(li, e) {
+    const u = laneUI[li];
+    const rect = u.canvas.getBoundingClientRect();
+    const steps = trackSteps(state.lanes[li].track);
+    const rows = u.rows.hi - u.rows.lo + 1;
+    const rowH = (rect.height - ROLL_TOP) / rows;
+    return {
+      pos: ((e.clientX - rect.left) / rect.width) * steps,
+      midi: u.rows.hi - Math.floor((e.clientY - rect.top - ROLL_TOP) / rowH),
+      slack: (steps / rect.width) * 6   // six pixels, so tiny notes stay clickable
+    };
+  }
+
+  function updateTrackReadout() {
+    let text = "1.1";
+    if (state.playing) {
+      const p = songPos();
+      text = p < 0 ? "–" : barBeat(p, trackSteps(state.track));
+    }
+    if (text !== lastPosText) { lastPosText = text; $("#jc-trackPos").textContent = text; }
+  }
+
+  function updateLaneCounts() {
+    laneUI.forEach(function (u, i) {
+      const T = state.lanes[i].track;
+      const n = T.notes.filter(function (x) { return x.s < trackSteps(T); }).length;
+      const text = n ? n + (n === 1 ? " note" : " notes") : "empty";
+      if (u.count.textContent !== text) u.count.textContent = text;
+    });
+  }
+
+  function syncTrackUI() {
+    laneUI.forEach(function (u, i) {
+      const T = state.lanes[i].track;
+      if (!u.barsSel.querySelector('option[value="' + T.bars + '"]')) {
+        const o = el("option", null, String(T.bars));
+        o.value = String(T.bars);
+        u.barsSel.appendChild(o);
+      }
+      u.barsSel.value = String(T.bars);
+      u.quantSel.value = T.quantize;
+      u.mute.classList.toggle("on", T.mute);
+      u.mute.textContent = T.mute ? "Muted" : "Mute";
+      u.mute.setAttribute("aria-pressed", T.mute ? "true" : "false");
+      u.el.classList.toggle("selected", i === state.lane);
+    });
+    updateLaneCounts();
+    rollDirty = true;
+  }
+
+  function buildLanes() {
+    const host = $("#jc-lanes");
+    host.innerHTML = "";
+    laneUI.length = 0;
+    LANES.forEach(function (l, i) {
+      const lane = el("div", "lane");
+      lane.style.setProperty("--lcolor", l.color);
+      const head = el("div", "lane-head");
+
+      const name = el("button", "lane-name");
+      name.type = "button";
+      name.title = "Select the " + l.name + " lane (Q switches lanes)";
+      name.appendChild(el("span", "swatch"));
+      name.appendChild(el("span", null, l.name));
+      name.addEventListener("click", function () { selectLane(i); });
+      head.appendChild(name);
+
+      const barsField = el("label", "field");
+      barsField.appendChild(el("span", null, "Bars"));
+      const barsSel = el("select", "select");
+      BAR_CHOICES.forEach(function (n) {
+        const o = el("option", null, String(n));
+        o.value = String(n);
+        barsSel.appendChild(o);
+      });
+      barsSel.addEventListener("change", function () {
+        state.lanes[i].track.bars = parseInt(this.value, 10);
+        rollDirty = true;
+        save();
+        toast(l.name + " lane loops every " + this.value + (this.value === "1" ? " bar" : " bars"));
+      });
+      barsField.appendChild(barsSel);
+      head.appendChild(barsField);
+
+      const quantField = el("label", "field");
+      quantField.appendChild(el("span", null, "Quantize"));
+      const quantSel = el("select", "select");
+      Object.keys(GRIDS).forEach(function (q) {
+        const o = el("option", null, q === "off" ? "Off" : q);
+        o.value = q;
+        quantSel.appendChild(o);
+      });
+      quantSel.addEventListener("change", function () {
+        state.lanes[i].track.quantize = this.value;
+        rollDirty = true;
+        save();
+      });
+      quantField.appendChild(quantSel);
+      head.appendChild(quantField);
+
+      const mute = el("button", "btn", "Mute");
+      mute.type = "button";
+      mute.addEventListener("click", function () {
+        const T = state.lanes[i].track;
+        T.mute = !T.mute;
+        if (T.mute) silenceTrack();
+        syncTrackUI();
+        save();
+      });
+      head.appendChild(mute);
+
+      const clear = el("button", "btn danger", "Clear");
+      clear.type = "button";
+      clear.addEventListener("click", function () {
+        const T = state.lanes[i].track;
+        if (!T.notes.length) return toast("The " + l.name + " lane is already empty");
+        snapshot("clear " + l.name.toLowerCase());
+        T.notes = [];
+        if (i === state.lane) recOpen.clear();
+        silenceTrack();
+        syncTrackUI();
+        save();
+        toast("Cleared the " + l.name + " lane");
+      });
+      head.appendChild(clear);
+
+      const midi = el("button", "btn", "MIDI");
+      midi.type = "button";
+      midi.title = "Download this lane as a MIDI file (and keep it as a cart in the tape library)";
+      midi.addEventListener("click", function () { exportLaneMidi(i); });
+      head.appendChild(midi);
+
+      const count = el("span", "lane-count", "empty");
+      head.appendChild(count);
+
+      const canvas = el("canvas", "roll");
+      canvas.setAttribute("aria-label", l.name + " lane piano roll — click a note to remove it");
+      canvas.addEventListener("pointerdown", function (e) {
+        const hit = rollHit(i, e);
+        const T = state.lanes[i].track;
+        const n = noteAt(T, hit.pos, hit.midi, hit.slack);
+        if (!n) { selectLane(i); return; }
+        snapshot("remove note");
+        T.notes.splice(T.notes.indexOf(n), 1);
+        syncTrackUI();
+        save();
+        toast("Removed " + noteName(n.m) + " from bar " + (Math.floor(n.s / STEPS_PER_BAR) + 1) + " — Undo brings it back");
+      });
+      canvas.addEventListener("pointermove", function (e) {
+        const hit = rollHit(i, e);
+        canvas.style.cursor = noteAt(state.lanes[i].track, hit.pos, hit.midi, hit.slack) ? "pointer" : "default";
+      });
+
+      lane.appendChild(head);
+      lane.appendChild(canvas);
+      host.appendChild(lane);
+      laneUI.push({ el: lane, canvas: canvas, ctx: null, barsSel: barsSel, quantSel: quantSel, mute: mute, count: count, rows: { lo: 55, hi: 84 } });
+    });
+    sizeRolls();
+    window.addEventListener("resize", sizeRolls);
+    syncTrackUI();
+  }
+
+  function exportLaneMidi(li) {
+    const lane = state.lanes[li];
+    const def = LANES[li];
+    // notes are stored as the key played; the lane's octave is part of its sound
+    const notes = trackToMidiNotes(lane.track, state.bpm).map(function (n) {
+      return { pitch: clamp(n.pitch + lane.synth.octave * 12, 0, 127), start: n.start, dur: n.dur, vel: n.vel };
+    });
+    if (!notes.length) return toast("Nothing on the " + def.name + " lane yet — select it, press Rec and play");
+    const bytes = writeMidi({ bpm: state.bpm, tracks: [{ name: "JC-808 " + def.name, channel: li, program: def.program, notes: notes }] });
+    const name = "jc808-" + def.id + "-" + state.bpm + "bpm-" + lane.track.bars + "bars.mid";
+    try {
+      studio.library.addMidi({ name: name, seq: parseMidi(bytes, name), bytes: bytes, source: "JC-808", meta: { bpm: state.bpm } });
+    } catch (e) {}
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([bytes], { type: "audio/midi" }));
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    toast("Exported " + name + " — it's also in the tape library as a cart");
   }
 
   /* ============================================================
@@ -870,7 +1376,7 @@ export function mountJC808(root, studio) {
     }
     btn.addEventListener("pointerup", release);
     btn.addEventListener("pointercancel", release);
-    btn.addEventListener("dblclick", function () { set(opts.value, "force"); });
+    btn.addEventListener("dblclick", function () { set(opts.reset ? opts.reset() : opts.value, "force"); });
     btn.addEventListener("wheel", function (e) {
       e.preventDefault();
       set(value + (e.deltaY < 0 ? 1 : -1) * step * (e.shiftKey ? 1 : 4));
@@ -1130,9 +1636,18 @@ export function mountJC808(root, studio) {
     due.sort(function (a, b) { return a.time - b.time; });
     due.forEach(function (ev) {
       if (ev.step >= 0) paintPlayhead(ev.step);
-      if (ev.key != null) flashKey(ev.key);
+      if (ev.key != null) flashKey(ev.key, ev.hold ? ev.hold * 1000 : 0);
     });
     drawScope();
+    if (isActive() && (state.playing || rollDirty)) {
+      // the panel may still have been animating open when the rolls were sized
+      const r = window.devicePixelRatio || 1;
+      if (laneUI.some(function (u) { return Math.abs(u.canvas.clientWidth * r - u.canvas.width) > 1; })) sizeRolls();
+      laneUI.forEach(function (_, i) { drawRoll(i); });
+      if (rollDirty) updateLaneCounts();
+      rollDirty = false;
+    }
+    updateTrackReadout();
   }
 
   /* ============================================================
@@ -1241,14 +1756,18 @@ export function mountJC808(root, studio) {
     if (k) k.classList.toggle("down", on);
   }
   // arp notes use their own class so they never clear a held or latched key
-  function flashKey(midi) {
+  const flashTimers = new Map();   // midi -> timeout, so a long note outlives a short flash
+  function flashKey(midi, ms) {
+    const hold = Math.max(110, ms || 0);
     live.keys.add(midi);
-    setTimeout(function () { if (!held.has(midi) && latched.indexOf(midi) === -1) live.keys.delete(midi); }, 110);
     const k = keyEls[midi];
-    if (!k) return;
-    k.classList.add("flash");
-    clearTimeout(k._flash);
-    k._flash = setTimeout(function () { k.classList.remove("flash"); }, 110);
+    if (k) k.classList.add("flash");
+    clearTimeout(flashTimers.get(midi));
+    flashTimers.set(midi, setTimeout(function () {
+      flashTimers.delete(midi);
+      if (!held.has(midi) && latched.indexOf(midi) === -1) live.keys.delete(midi);
+      if (k) k.classList.remove("flash");
+    }, hold));
   }
 
   function pressNote(midi) {
@@ -1301,6 +1820,8 @@ export function mountJC808(root, studio) {
     }
     if (k === "z") { setOctave(state.synth.octave - 1); return; }
     if (k === "x") { setOctave(state.synth.octave + 1); return; }
+    if (k === "r") { e.preventDefault(); toggleRecording(); return; }
+    if (k === "q") { e.preventDefault(); selectLane(1 - state.lane); return; }
     if (k === "escape") { allNotesOff(true); return; }
 
     // drum triggers on the number row
@@ -1443,8 +1964,16 @@ export function mountJC808(root, studio) {
       bpm: state.bpm, swing: state.swing, volume: state.volume, drive: state.drive,
       accentAmt: state.accentAmt, bank: state.bank, chain: state.chain,
       banks: state.banks, voices: state.voices, mutes: state.mutes,
-      solos: state.solos, synth: state.synth
+      solos: state.solos,
+      lane: state.lane,
+      lanes: state.lanes.map(function (l) { return { synth: l.synth, track: serialiseTrack(l.track) }; }),
+      fx: state.fx
     };
+  }
+
+  function loadPatch(dst, src) {
+    if (!src) return;
+    PATCH_KEYS.forEach(function (k) { if (src[k] != null) dst[k] = src[k]; });
   }
 
   let saveTimer = null;
@@ -1477,7 +2006,23 @@ export function mountJC808(root, studio) {
       });
       if (data.mutes) Object.assign(state.mutes, data.mutes);
       if (data.solos) Object.assign(state.solos, data.solos);
-      if (data.synth) Object.assign(state.synth, data.synth);
+      if (Array.isArray(data.lanes)) {
+        data.lanes.slice(0, LANES.length).forEach(function (ld, i) {
+          if (!ld) return;
+          loadPatch(state.lanes[i].synth, ld.synth);
+          if (ld.track) state.lanes[i].track = normaliseTrack(ld.track);
+        });
+      } else if (data.synth) {
+        // saves from before the lanes existed: the one patch becomes the lead
+        loadPatch(state.lanes[1].synth, data.synth);
+        if (data.synth.delay != null) state.fx.delay = data.synth.delay;
+        if (data.synth.reverb != null) state.fx.reverb = data.synth.reverb;
+      }
+      if (data.fx) {
+        if (data.fx.delay != null) state.fx.delay = clamp(+data.fx.delay || 0, 0, 0.8);
+        if (data.fx.reverb != null) state.fx.reverb = clamp(+data.fx.reverb || 0, 0, 0.8);
+      }
+      if (data.lane === 0 || data.lane === 1) state.lane = data.lane;
       return true;
     } catch (e) { return false; }
   }
@@ -1562,30 +2107,41 @@ export function mountJC808(root, studio) {
   function renderOffline() {
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!OAC) return Promise.reject(new Error("Offline rendering unsupported"));
-    const bars = 2;
     const sd = 60 / state.bpm / 4;
     const banksToRender = state.chain ? [0, 1, 2, 3] : [state.bank];
-    let totalSteps = 0;
-    banksToRender.forEach(function (b) { totalSteps += state.banks[b].length; });
-    const dur = totalSteps * bars * sd + 2.2;
+    let passSteps = 0;
+    banksToRender.forEach(function (b) { passSteps += state.banks[b].length; });
+    // two passes of the drums, or the longest synth lane if that is longer,
+    // rounded up so the drum loop always completes
+    let laneSteps = 0;
+    state.lanes.forEach(function (l) {
+      const T = l.track;
+      if (!T.mute && T.notes.some(function (n) { return n.s < trackSteps(T); })) laneSteps = Math.max(laneSteps, trackSteps(T));
+    });
+    let totalSteps = passSteps * 2;
+    if (laneSteps) totalSteps = Math.ceil(Math.max(totalSteps, laneSteps) / passSteps) * passSteps;
+    const dur = totalSteps * sd + 2.2;
 
     const off = new OAC(2, Math.ceil(44100 * dur), 44100);
     const E = createEngine(off);
     E.master.gain.value = state.volume;
     E.drive.curve = driveCurve(state.drive);
-    E.delayMix.gain.value = state.synth.delay * 0.6;
-    E.reverbMix.gain.value = state.synth.reverb * 0.6;
+    E.lanes.forEach(function (g, i) { g.gain.value = state.lanes[i].synth.level; });
+    E.delayMix.gain.value = state.fx.delay * 0.6;
+    E.reverbMix.gain.value = state.fx.reverb * 0.6;
     E.delay.delayTime.value = clamp((60 / state.bpm) * 0.75, 0.02, 1.9);
 
-    let t = 0.05;
-    for (let rep = 0; rep < bars; rep++) {
-      banksToRender.forEach(function (b) {
-        const p = state.banks[b];
-        for (let s = 0; s < p.length; s++) {
+    let t = 0.05, song = 0;
+    while (song < totalSteps) {
+      for (let bi = 0; bi < banksToRender.length && song < totalSteps; bi++) {
+        const b = banksToRender[bi], p = state.banks[b];
+        for (let s = 0; s < p.length && song < totalSteps; s++) {
           emitStep(E, b, s, s % 2 === 0 ? t : t + state.swing * 0.62 * sd);
+          if (laneSteps) scheduleTrack(E, song, t, false);
           t += sd;
+          song++;
         }
-      });
+      }
     }
 
     return off.startRendering();
@@ -1764,108 +2320,96 @@ export function mountJC808(root, studio) {
       save();
     });
 
-    // ---- synth controls ----
-    const S = state.synth;
+    // ---- synth controls: always the selected lane's patch ----
+    const S = function () { return state.synth; };
+
+    const laneSeg = $("#jc-laneSeg");
+    LANES.forEach(function (l, i) {
+      const b = el("button", null, l.name);
+      b.type = "button";
+      b.dataset.v = String(i);
+      b.addEventListener("click", function () { selectLane(i); });
+      laneSeg.appendChild(b);
+    });
 
     const waveSeg = $("#jc-waveSeg");
     [["sawtooth", "Saw"], ["square", "Sqr"], ["triangle", "Tri"], ["sine", "Sin"]].forEach(function (w) {
-      const b = el("button", S.wave === w[0] ? "on" : null, w[1]);
+      const b = el("button", null, w[1]);
       b.type = "button";
-      b.addEventListener("click", function () {
-        S.wave = w[0];
-        waveSeg.querySelectorAll("button").forEach(function (x) { x.classList.remove("on"); });
-        b.classList.add("on");
-        save();
-      });
+      b.dataset.v = w[0];
+      b.addEventListener("click", function () { S().wave = w[0]; markSeg(waveSeg, w[0]); save(); });
       waveSeg.appendChild(b);
     });
 
-    $("#jc-oscSlots").appendChild(Knob({
-      label: "Detune", min: 0, max: 40, value: S.detune, step: 0.5,
-      format: function (v) { return v.toFixed(1) + "¢"; },
-      onChange: function (v) { S.detune = v; save(); }
-    }));
-    $("#jc-oscSlots").appendChild(Knob({
-      label: "Sub", min: 0, max: 1, value: S.sub, step: 0.01, format: pct,
-      onChange: function (v) { S.sub = v; save(); }
-    }));
+    function synthKnob(slot, key, opts) {
+      const k = Knob(Object.assign({
+        value: S()[key],
+        reset: function () { return LANES[state.lane].def[key]; },
+        onChange: function (v) {
+          S()[key] = opts.round ? Math.round(v) : v;
+          if (opts.after) opts.after();
+          save();
+        }
+      }, opts));
+      synthKnobs[key] = k;
+      $(slot).appendChild(k);
+    }
 
-    $("#jc-filterSlots").appendChild(Knob({
-      label: "Cutoff", min: 0, max: 1, value: S.cutoff, step: 0.01, format: pct,
-      onChange: function (v) { S.cutoff = v; save(); }
-    }));
-    $("#jc-filterSlots").appendChild(Knob({
-      label: "Reso", min: 0.5, max: 18, value: S.reso, step: 0.1,
-      format: function (v) { return v.toFixed(1); },
-      onChange: function (v) { S.reso = v; save(); }
-    }));
-    $("#jc-filterSlots").appendChild(Knob({
-      label: "Env", min: 0, max: 1, value: S.envAmt, step: 0.01, format: pct,
-      onChange: function (v) { S.envAmt = v; save(); }
-    }));
+    synthKnob("#jc-oscSlots", "detune", { label: "Detune", min: 0, max: 40, step: 0.5, format: function (v) { return v.toFixed(1) + "¢"; } });
+    synthKnob("#jc-oscSlots", "sub", { label: "Sub", min: 0, max: 1, step: 0.01, format: pct });
+
+    synthKnob("#jc-filterSlots", "cutoff", { label: "Cutoff", min: 0, max: 1, step: 0.01, format: pct });
+    synthKnob("#jc-filterSlots", "reso", { label: "Reso", min: 0.5, max: 18, step: 0.1, format: function (v) { return v.toFixed(1); } });
+    synthKnob("#jc-filterSlots", "envAmt", { label: "Env", min: 0, max: 1, step: 0.01, format: pct });
 
     [["attack", "Attack", 0.001, 1.5], ["decay", "Decay", 0.01, 2], ["sustain", "Sustain", 0, 1], ["release", "Release", 0.02, 3]]
       .forEach(function (d) {
-        $("#jc-envSlots").appendChild(Knob({
-          label: d[1], min: d[2], max: d[3], value: S[d[0]], step: 0.005,
-          format: function (v) { return d[0] === "sustain" ? pct(v) : v.toFixed(2) + "s"; },
-          onChange: function (v) { S[d[0]] = v; save(); }
-        }));
+        synthKnob("#jc-envSlots", d[0], {
+          label: d[1], min: d[2], max: d[3], step: 0.005,
+          format: function (v) { return d[0] === "sustain" ? pct(v) : v.toFixed(2) + "s"; }
+        });
       });
 
+    synthKnob("#jc-mixSlots", "level", { label: "Level", min: 0, max: 1, step: 0.01, format: pct, after: applyMaster });
     $("#jc-mixSlots").appendChild(Knob({
-      label: "Synth", min: 0, max: 1, value: S.level, step: 0.01, format: pct,
-      onChange: function (v) { S.level = v; applyMaster(); save(); }
+      label: "Delay", min: 0, max: 0.8, value: state.fx.delay, step: 0.01, format: pct,
+      onChange: function (v) { state.fx.delay = v; applyMaster(); save(); }
     }));
     $("#jc-mixSlots").appendChild(Knob({
-      label: "Delay", min: 0, max: 0.8, value: S.delay, step: 0.01, format: pct,
-      onChange: function (v) { S.delay = v; applyMaster(); save(); }
-    }));
-    $("#jc-mixSlots").appendChild(Knob({
-      label: "Reverb", min: 0, max: 0.8, value: S.reverb, step: 0.01, format: pct,
-      onChange: function (v) { S.reverb = v; applyMaster(); save(); }
+      label: "Reverb", min: 0, max: 0.8, value: state.fx.reverb, step: 0.01, format: pct,
+      onChange: function (v) { state.fx.reverb = v; applyMaster(); save(); }
     }));
 
     $("#jc-monoBtn").addEventListener("click", function () {
-      S.mono = !S.mono;
-      this.classList.toggle("on", S.mono);
-      this.textContent = S.mono ? "Mono" : "Poly";
+      S().mono = !S().mono;
       allNotesOff();
+      refreshSynthUI();
       save();
     });
-    $("#jc-monoBtn").textContent = S.mono ? "Mono" : "Poly";
-    $("#jc-monoBtn").classList.toggle("on", S.mono);
 
     // arp
     $("#jc-arpBtn").addEventListener("click", function () {
-      S.arp = !S.arp;
-      this.classList.toggle("on", S.arp);
+      S().arp = !S().arp;
       allNotesOff();
       arpIndex = 0;
-      toast(S.arp ? "Arpeggiator on — hold keys while the sequencer runs" : "Arpeggiator off");
+      refreshSynthUI();
+      toast(S().arp ? "Arpeggiator on — hold keys while the sequencer runs" : "Arpeggiator off");
       save();
     });
-    $("#jc-arpBtn").classList.toggle("on", S.arp);
 
     $("#jc-latchBtn").addEventListener("click", function () {
-      S.latch = !S.latch;
-      this.classList.toggle("on", S.latch);
-      if (!S.latch) allNotesOff(true);
+      S().latch = !S().latch;
+      if (!S().latch) allNotesOff(true);
+      refreshSynthUI();
       save();
     });
-    $("#jc-latchBtn").classList.toggle("on", S.latch);
 
     const modeSeg = $("#jc-arpModeSeg");
     ["up", "down", "updown", "random"].forEach(function (m) {
-      const b = el("button", S.arpMode === m ? "on" : null, m);
+      const b = el("button", null, m);
       b.type = "button";
-      b.addEventListener("click", function () {
-        S.arpMode = m;
-        arpIndex = 0;
-        modeSeg.querySelectorAll("button").forEach(function (x) { x.classList.remove("on"); });
-        b.classList.add("on");
-        save();
-      });
+      b.dataset.v = m;
+      b.addEventListener("click", function () { S().arpMode = m; arpIndex = 0; markSeg(modeSeg, m); save(); });
       modeSeg.appendChild(b);
     });
 
@@ -1875,27 +2419,45 @@ export function mountJC808(root, studio) {
       o.value = r;
       rateSel.appendChild(o);
     });
-    rateSel.value = S.arpRate;
-    rateSel.addEventListener("change", function () { S.arpRate = this.value; save(); });
+    rateSel.addEventListener("change", function () { S().arpRate = this.value; save(); });
 
-    $("#jc-arpSlots").appendChild(Knob({
-      label: "Octaves", min: 1, max: 4, value: S.arpOct, step: 1,
-      format: function (v) { return String(Math.round(v)); },
-      onChange: function (v) { S.arpOct = Math.round(v); save(); }
-    }));
-    $("#jc-arpSlots").appendChild(Knob({
-      label: "Gate", min: 0, max: 1, value: S.arpGate, step: 0.01, format: pct,
-      onChange: function (v) { S.arpGate = v; save(); }
-    }));
+    synthKnob("#jc-arpSlots", "arpOct", { label: "Octaves", min: 1, max: 4, step: 1, round: true, format: function (v) { return String(Math.round(v)); } });
+    synthKnob("#jc-arpSlots", "arpGate", { label: "Gate", min: 0, max: 1, step: 0.01, format: pct });
 
     $("#jc-octDown").addEventListener("click", function () { setOctave(state.synth.octave - 1); });
     $("#jc-octUp").addEventListener("click", function () { setOctave(state.synth.octave + 1); });
-    $("#jc-octReadout").textContent = (S.octave >= 0 ? "+" : "") + S.octave;
 
     $("#jc-panicBtn").addEventListener("click", function () {
       allNotesOff(true);
       toast("All notes off");
     });
+
+    $("#jc-recBtn").addEventListener("click", toggleRecording);
+    refreshSynthUI();
+  }
+
+  const synthKnobs = {};   // patch key -> knob, so a lane switch can repaint them
+
+  function markSeg(seg, value) {
+    seg.querySelectorAll("button").forEach(function (b) { b.classList.toggle("on", b.dataset.v === String(value)); });
+  }
+
+  // paint every synth control from the selected lane's patch
+  function refreshSynthUI() {
+    const S = state.synth;
+    Object.keys(synthKnobs).forEach(function (k) { synthKnobs[k].setValue(S[k]); });
+    markSeg($("#jc-waveSeg"), S.wave);
+    markSeg($("#jc-arpModeSeg"), S.arpMode);
+    markSeg($("#jc-laneSeg"), state.lane);
+    $("#jc-arpRate").value = S.arpRate;
+    const mono = $("#jc-monoBtn");
+    mono.textContent = S.mono ? "Mono" : "Poly";
+    mono.classList.toggle("on", S.mono);
+    $("#jc-arpBtn").classList.toggle("on", S.arp);
+    $("#jc-latchBtn").classList.toggle("on", S.latch);
+    $("#jc-octReadout").textContent = (S.octave >= 0 ? "+" : "") + S.octave;
+    $("#jc-synthLane").textContent = LANES[state.lane].name;
+    $("#jc-synthLane").style.color = LANES[state.lane].color;
   }
 
   /* ============================================================
@@ -1926,6 +2488,7 @@ export function mountJC808(root, studio) {
 
     buildGrid();
     buildKeyboard();
+    buildLanes();
     buildControls();
 
     scopeCanvas = $("#jc-scope");
@@ -1940,7 +2503,7 @@ export function mountJC808(root, studio) {
     $("#jc-tapeBtn").addEventListener("click", renderToTape);
 
     return {
-      open: function () { sizeScope(); ensureAudio(); },
+      open: function () { sizeScope(); sizeRolls(); ensureAudio(); },
       close: function () { downKeys.clear(); if (!state.synth.latch) allNotesOff(); },
       togglePlay: togglePlay,
       get playing() { return state.playing; }

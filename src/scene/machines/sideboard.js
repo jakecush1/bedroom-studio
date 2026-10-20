@@ -261,7 +261,7 @@ function drawUnit(id, g, w, h, s, t) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Turntable (archive radio)                                           */
+/* Turntable (Room 808 FM)                                             */
 /* ------------------------------------------------------------------ */
 
 function buildTurntable(parent, studio) {
@@ -319,7 +319,7 @@ function buildTurntable(parent, studio) {
   const m = machine({
     id: "radio",
     label: "ROOM 808 FM",
-    hint: "Dig the Internet Archive for chiptunes",
+    hint: "Local & national radio, streamed into the room",
     zone: "studio",
     root,
     hit: [0.48, 0.2, 0.4],
