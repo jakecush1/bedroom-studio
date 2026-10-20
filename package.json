@@ -1,0 +1,21 @@
+{
+  "name": "bedroom-studio",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A lofi 3D bedroom music studio: the JC-808 plus the ChipWorld chiptune tools, rebuilt for the browser.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@spotify/basic-pitch": "1.0.1",
+    "abcjs": "6.7.1",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "vite": "8.3.4"
+  }
+}
