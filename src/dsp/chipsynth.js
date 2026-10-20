@@ -29,7 +29,9 @@ export const ENVELOPES = {
   e: { a: 100, d: 30, r: 6, s: 0.1, label: "E · bloom" },
   f: { a: 5, d: 50, r: 100, s: 0.5, label: "F · pluck" },
   nes: { a: 1, d: 260, r: 20, s: 0.0, label: "NES decay" },
-  stab: { a: 1, d: 90, r: 15, s: 0.25, label: "Stab" }
+  stab: { a: 1, d: 90, r: 15, s: 0.25, label: "Stab" },
+  lead: { a: 2, d: 140, r: 35, s: 0.62, label: "Lead (Chipify)" },
+  arp: { a: 1, d: 45, r: 8, s: 0.55, label: "Arp (Chipify)" }
 };
 
 export const WAVES = {
@@ -305,7 +307,11 @@ function renderVoice(out, note, v, opts, chipId) {
   const f = mtof(note.pitch + 12 * (v.octave || 0));
   const raw = opts.method === "raw" || (opts.method === "auto" && chip.method === "raw");
   let phase = 0;
-  const inc = f / sr;
+  const baseInc = f / sr;
+  let inc = baseInc;
+  // optional vibrato (cents), fading in after the attack like a player's hand
+  const vib = note.vib || 0;
+  const vibW = (2 * Math.PI * 5.6) / sr, vibK = vib * 0.000577623; // ln2/1200
   let lfsr = 1, lfsrClock = 0, lfsrOut = 1, lfsrInc = 0, mode = 0;
   if (wave === "lfsr" || wave === "lfsrShort") {
     // NES-MDB noise values 1..16 pick the period; GM notes map by pitch
@@ -326,6 +332,10 @@ function renderVoice(out, note, v, opts, chipId) {
   const gNoise = wave === "noise";
 
   for (let i = 0; i < total; i++) {
+    if (vib) {
+      const d = i > 0.18 * sr ? Math.min(1, (i - 0.18 * sr) / (0.2 * sr)) : 0;
+      inc = baseInc * (1 + vibK * d * Math.sin(vibW * i));
+    }
     let y;
     if (table) {
       const p = phase * TABLE;

@@ -41,11 +41,10 @@ export const TOOLS = {
   },
   chipify: {
     title: "CHIPIFY",
-    subtitle: "Song → beats + melody + chords + dynamics → 4-channel chiptune",
-    origin: "ChipWorld project goal · G1 + G2 pipeline",
+    subtitle: "Any song → NES / Game Boy / SEGA / C64 chiptune · beat, melody, bass, chords, drums",
+    origin: "ChipWorld chipify · Melody-extractor · demucs_extract.py · Basic Pitch",
     width: "",
-    load: null,
-    wip: "Drop in any song: it tracks the beat, extracts the melody, detects chords and dynamics, then re-performs it on Pulse 1, Pulse 2, Triangle and Noise."
+    load: () => import("./chipify/index.js")
   },
   engine: {
     title: "CHIP-4 Sound Engine",

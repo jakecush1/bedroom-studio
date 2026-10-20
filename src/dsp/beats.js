@@ -280,3 +280,128 @@ export function beatFMeasure(reference, estimated, window = 0.07) {
   const p = hits / est.length, rc = hits / ref.length;
   return p + rc > 0 ? (2 * p * rc) / (p + rc) : 0;
 }
+
+/**
+ * Onset strength as librosa computes it: a mel spectrogram (64 bands,
+ * 30 Hz–8 kHz) in dB, half-wave rectified frame difference averaged over
+ * bands. Mel weighting keeps the kick and bass in the picture; a flux summed
+ * over linear bins is dominated by hats and overstates eighth-note pulses.
+ */
+export function melOnsetStrength(spec, { bands = 64, fmin = 30, fmax = 8000 } = {}) {
+  const { data, frames, bins, sr } = spec;
+  const nfft = (bins - 1) * 2;
+  const mel = (f) => 2595 * Math.log10(1 + f / 700), imel = (m) => 700 * (Math.pow(10, m / 2595) - 1);
+  const m0 = mel(fmin), m1 = mel(Math.min(fmax, sr / 2));
+  const edges = Array.from({ length: bands + 2 }, (_, i) => imel(m0 + ((m1 - m0) * i) / (bands + 1)));
+  const fb = [];
+  for (let b = 0; b < bands; b++) {
+    const lo = edges[b], c = edges[b + 1], hi = edges[b + 2];
+    const k0 = Math.max(1, Math.floor((lo * nfft) / sr)), k1 = Math.min(bins - 1, Math.ceil((hi * nfft) / sr));
+    const w = [];
+    for (let k = k0; k <= k1; k++) {
+      const f = (k * sr) / nfft;
+      const v = f < c ? (f - lo) / (c - lo || 1) : (hi - f) / (hi - c || 1);
+      if (v > 0) w.push([k, v]);
+    }
+    fb.push(w);
+  }
+  const S = new Float32Array(frames * bands);
+  let top = -Infinity;
+  for (let t = 0; t < frames; t++) {
+    const o = t * bins;
+    for (let b = 0; b < bands; b++) {
+      let p = 0;
+      for (const [k, v] of fb[b]) p += v * data[o + k] * data[o + k];
+      const db = 10 * Math.log10(p + 1e-10);
+      S[t * bands + b] = db;
+      if (db > top) top = db;
+    }
+  }
+  const floor = top - 80;
+  const out = new Float32Array(frames);
+  for (let t = 1; t < frames; t++) {
+    let acc = 0;
+    for (let b = 0; b < bands; b++) {
+      const d = Math.max(S[t * bands + b], floor) - Math.max(S[(t - 1) * bands + b], floor);
+      if (d > 0) acc += d;
+    }
+    out[t] = acc / bands;
+  }
+  let max = 0;
+  for (let i = 0; i < frames; i++) max = Math.max(max, out[i]);
+  if (max > 0) for (let i = 0; i < frames; i++) out[i] /= max;
+  return out;
+}
+
+/**
+ * Higher-resolution tempo + beats (used by Chipify). The V3 estimator smooths
+ * its autocorrelation over 10 lags, which at 43 fps spans most of the
+ * 140–180 bpm range and drags fast songs toward its 120 bpm prior. This one
+ * follows librosa's tempo(): an onset envelope at ~86 fps (pass a hop-256
+ * spectrogram), local autocorrelations over 8 s Hann windows, each normalised,
+ * averaged over the song, weighted by a log-normal prior (120 bpm, 1 octave),
+ * read at quarter-frame lags with a binary-metre comb (period, half, double);
+ * then the Ellis tracker, the octave check and a least-squares grid fit.
+ */
+export function analyzeBeatsFine(spec, { minBpm = 50, maxBpm = 200, prior = 120, priorOct = 1 } = {}) {
+  const fps = spec.sr / spec.hop;
+  const oss = melOnsetStrength(spec);
+  const n = oss.length;
+  const W = Math.min(n, Math.round(8 * fps));
+  const maxLag = Math.ceil((fps * 60) / minBpm) * 2 + 2;
+  const hop = Math.max(1, Math.round(fps * 0.75));
+  const mean = new Float64Array(maxLag + 1);
+  const win = new Float64Array(W);
+  for (let i = 0; i < W; i++) win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / Math.max(1, W - 1));
+  const seg = new Float64Array(W);
+  let count = 0;
+  for (let s0 = 0; s0 + W <= n || (s0 === 0 && n > 0); s0 += hop) {
+    const len = Math.min(W, n - s0);
+    for (let i = 0; i < len; i++) seg[i] = oss[s0 + i] * win[i];
+    let a0 = 0;
+    for (let i = 0; i < len; i++) a0 += seg[i] * seg[i];
+    if (a0 <= 1e-12) { if (s0 + W > n) break; continue; }
+    for (let L = 1; L <= maxLag && L < len; L++) {
+      let acc = 0;
+      for (let i = 0; i + L < len; i++) acc += seg[i] * seg[i + L];
+      mean[L] += acc / a0;
+    }
+    count++;
+    if (s0 + W > n) break;
+  }
+  const at = (L) => {
+    const i = Math.floor(L), fr = L - i;
+    return i + 1 <= maxLag ? ((1 - fr) * mean[i] + fr * mean[i + 1]) / Math.max(1, count) : 0;
+  };
+  let best = -Infinity, bestLag = (fps * 60) / 120;
+  for (let L = (fps * 60) / maxBpm; L <= (fps * 60) / minBpm; L += 0.25) {
+    const bpm = (60 * fps) / L;
+    // binary metre: the real beat also pulses at half and double its period
+    // (a 3:2 level such as a syncopated riff's dotted pulse does not)
+    const sc = (at(L) + 0.5 * at(2 * L) + 0.5 * at(L / 2)) * Math.exp(-0.5 * Math.pow(Math.log2(bpm / prior) / priorOct, 2));
+    if (sc > best) { best = sc; bestLag = L; }
+  }
+  let bpm = (60 * fps) / bestLag;
+  let frames = trackEllis(oss, bestLag);
+  if (frames.length > 4) {
+    const atO = (fr) => { let m = 0; for (let j = Math.max(0, fr - 2); j <= Math.min(n - 1, fr + 2); j++) m = Math.max(m, oss[j]); return m; };
+    let onBeat = 0, offBeat = 0;
+    for (let i = 0; i + 1 < frames.length; i++) {
+      onBeat += atO(frames[i]);
+      offBeat += atO(Math.round((frames[i] + frames[i + 1]) / 2));
+    }
+    if (offBeat > 0.62 * onBeat && bpm * 2 <= Math.min(maxBpm, 180)) {
+      bpm *= 2;
+      frames = trackEllis(oss, (60 * fps) / bpm);
+    }
+  }
+  const times = frames.map((fr) => (fr * spec.hop) / spec.sr);
+  if (times.length > 6) {
+    const m = times.length;
+    let sx = 0, sy = 0, sxx = 0, sxy = 0;
+    for (let i = 0; i < m; i++) { sx += i; sy += times[i]; sxx += i * i; sxy += i * times[i]; }
+    const slope = (m * sxy - sx * sy) / (m * sxx - sx * sx);
+    if (slope > 0 && Math.abs(60 / slope - bpm) / bpm < 0.08) bpm = 60 / slope;
+  }
+  return { tempo: bpm, beat_times: times, beat_frames: frames, oss, fps };
+}

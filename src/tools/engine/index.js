@@ -332,11 +332,19 @@ export function create(studio, host) {
     studio.toast(`Saved “${it.name}” to the tape library`);
   }
 
+  // a cart handed over by another machine (Chipify's "Open in CHIP-4")
+  function takePending() {
+    const id = studio.pendingCart;
+    if (!id || !studio.library.get(id)) return false;
+    studio.pendingCart = null;
+    deck.set(id);
+    return true;
+  }
   // open the default cart
-  loadCart(deck.get());
+  if (!takePending()) loadCart(deck.get());
 
   return {
-    open() { scr.resize(); paint(); },
+    open() { takePending(); scr.resize(); paint(); },
     close() {},
     /** used by other machines to audition a sequence through the engine */
     async playSequence(seq, name, chip = "nes") {

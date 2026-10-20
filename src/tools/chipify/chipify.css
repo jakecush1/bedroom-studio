@@ -1,0 +1,36 @@
+/* CHIPIFY panel */
+.chipify { --accent: #ff6fb5; }
+.chipify .k-module.over { border-color: var(--accent); background: rgba(255,111,181,0.06); }
+.cf-qrow { margin-top: 10px; gap: 14px; }
+.cf-qrow .k-seg.dim { opacity: 0.4; pointer-events: none; }
+.cf-qnote { max-width: 620px; font-size: 11px; padding-bottom: 4px; }
+.cf-info { margin-top: 8px; font-family: var(--mono); font-size: 11px; line-height: 1.5; }
+.cf-status { display: flex; flex-direction: column; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--cream-dim); }
+.cf-status.busy span { color: var(--accent); animation: cf-pulse 1.4s ease-in-out infinite; }
+@keyframes cf-pulse { 50% { opacity: 0.55; } }
+
+.cf-chips { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.cf-chip {
+  text-align: left; display: flex; flex-direction: column; gap: 6px; padding: 14px 14px 12px; border-radius: 12px;
+  border: 1px solid var(--line-strong); color: var(--cream); background: linear-gradient(180deg, #1d1c24, #15141b);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.08s;
+}
+.cf-chip b { font-size: 14px; letter-spacing: 0.12em; text-transform: uppercase; font-family: var(--crt); font-size: 22px; font-weight: 400; }
+.cf-chip span { font-size: 12px; color: var(--cream-dim); line-height: 1.4; }
+.cf-chip:hover { border-color: rgba(255,255,255,0.32); }
+.cf-chip:active { transform: translateY(1px); }
+.cf-chip.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset, 0 8px 26px rgba(255,111,181,0.16); }
+.cf-chip.on b { color: var(--accent); }
+
+.cf-arr { gap: 14px; }
+.cf-arr .k-seg.dim { opacity: 0.4; pointer-events: none; }
+.chipify .k-seg button.on, .chipify .k-btn.on, .chipify .k-btn.primary { background: linear-gradient(180deg, #ff9fd0, var(--accent)); color: #1a0510; }
+.cf-transport { gap: 12px; align-items: flex-end; }
+.cf-time { font-family: var(--mono); font-size: 13px; color: var(--cream-dim); min-width: 110px; padding-bottom: 8px; }
+.cf-lanes { cursor: pointer; border-color: rgba(255,111,181,0.2); }
+.cf-summary { font-family: var(--mono); font-size: 11px; line-height: 1.5; }
+.cf-out { gap: 8px; }
+
+@media (max-width: 900px) {
+  .cf-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
