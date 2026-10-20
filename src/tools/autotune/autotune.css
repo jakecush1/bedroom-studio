@@ -1,0 +1,39 @@
+/* VOX-1 autotune panel */
+.autotune { --accent: #ffb35c; }
+.autotune .grow { flex: 1; }
+.autotune .k-module.over { border-color: var(--accent); background: rgba(255,179,92,0.06); }
+.at-info { margin-top: 8px; font-family: var(--mono); font-size: 11px; line-height: 1.5; }
+
+.at-levels { display: grid; gap: 10px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.at-card {
+  text-align: left; display: flex; flex-direction: column; gap: 6px; padding: 14px 14px 12px; border-radius: 12px;
+  border: 1px solid var(--line-strong); color: var(--cream); background: linear-gradient(180deg, #1d1c24, #15141b);
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.08s;
+}
+.at-card b { font-size: 15px; letter-spacing: 0.14em; text-transform: uppercase; }
+.at-card span { font-size: 12px; color: var(--cream-dim); line-height: 1.4; }
+.at-card i { font-style: normal; font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.06em; }
+.at-card:hover { border-color: rgba(255,255,255,0.32); }
+.at-card:active { transform: translateY(1px); }
+.at-card.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset, 0 8px 26px rgba(255,150,60,0.14); }
+.at-card.on b { color: var(--accent); }
+.at-card b::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
+.at-subtle b::before { background: #8affc1; }
+.at-natural b::before { background: #ffd27a; }
+.at-pop b::before { background: #ff8fc8; }
+.at-hard b::before { background: #ff5b4b; }
+
+.at-keyrow { gap: 14px; }
+.at-key { font-family: var(--mono); font-size: 12px; color: var(--accent); padding-bottom: 9px; }
+.at-transport { gap: 12px; align-items: flex-end; }
+.at-time { font-family: var(--mono); font-size: 13px; color: var(--cream-dim); min-width: 110px; padding-bottom: 8px; }
+.at-status { display: flex; flex-direction: column; gap: 6px; min-width: min(300px, 100%); font-family: var(--mono); font-size: 11px; color: var(--cream-dim); }
+.at-status.busy span { color: var(--accent); animation: at-pulse 1.4s ease-in-out infinite; }
+@keyframes at-pulse { 50% { opacity: 0.55; } }
+.at-graph { cursor: pointer; border-color: rgba(255,179,92,0.18); }
+.at-stats { font-family: var(--mono); font-size: 11px; }
+.at-out { gap: 8px; }
+
+@media (max-width: 900px) {
+  .at-levels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

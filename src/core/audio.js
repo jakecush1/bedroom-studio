@@ -1,22 +1,20 @@
 // The studio's single AudioContext and its routing.
 //
-//   tool buses ─► input ─► crusher insert (AudioWorklet) ─► master ─► limiter ─► speakers
-//                                                                        └─► analyser (room meters)
+//   tool buses ─► input ─► master ─► limiter ─► speakers
+//                                        └─► analyser (room meters)
 //   ambience (rain, vinyl) ─► ambience gain ─► speakers
 //
-// Every machine in the room plays through a named bus so the bitcrusher pedal
-// can crush the whole room and the room's VU meters react to everything.
+// Every machine in the room plays through a named bus so the room's VU
+// meters react to everything. (MASTER-1 monitors straight to the speakers so
+// this bus limiter never colours a master.)
 
 import { Emitter } from "./events.js";
-
-const crusherUrl = new URL("./worklets/bitcrusher.worklet.js", import.meta.url);
 
 export class StudioAudio extends Emitter {
   constructor() {
     super();
     this.ctx = null;
     this.buses = new Map();
-    this.crusher = null;
     this.ready = null;
     this._levelData = null;
   }
@@ -56,25 +54,9 @@ export class StudioAudio extends Emitter {
     this.limiter.connect(ctx.destination);
     this.limiter.connect(this.analyser);
 
-    // until the worklet loads, route straight through
     this.input.connect(this.master);
 
     this.ready = (async () => {
-      try {
-        await ctx.audioWorklet.addModule(crusherUrl);
-        const node = new AudioWorkletNode(ctx, "bitcrusher", {
-          numberOfInputs: 1,
-          numberOfOutputs: 1,
-          outputChannelCount: [2]
-        });
-        node.parameters.get("bypass").value = 1;
-        this.input.disconnect();
-        this.input.connect(node);
-        node.connect(this.master);
-        this.crusher = node;
-      } catch (err) {
-        console.warn("Bitcrusher worklet unavailable; master insert disabled", err);
-      }
       if (ctx.state === "suspended") await ctx.resume();
       this.emit("ready", this);
       return this;
@@ -104,19 +86,6 @@ export class StudioAudio extends Emitter {
 
   setAmbience(v) {
     if (this.ambience) this.ambience.gain.setTargetAtTime(v, this.ctx.currentTime, 0.3);
-  }
-
-  /** Master-insert bitcrusher controls (the pedal's "room" mode). */
-  setCrusher({ enabled, bits, factor, mix, link }) {
-    const n = this.crusher;
-    if (!n) return false;
-    const t = this.ctx.currentTime;
-    if (enabled != null) n.parameters.get("bypass").setValueAtTime(enabled ? 0 : 1, t);
-    if (bits != null) n.parameters.get("bits").setValueAtTime(bits, t);
-    if (factor != null) n.parameters.get("factor").setValueAtTime(factor, t);
-    if (mix != null) n.parameters.get("mix").setValueAtTime(mix, t);
-    if (link != null) n.parameters.get("link").setValueAtTime(link ? 1 : 0, t);
-    return true;
   }
 
   /** RMS level (0..1) of everything coming out of the speakers. */

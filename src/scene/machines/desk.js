@@ -1,6 +1,6 @@
 // The desk under the window — the chip workstation: Chipify on the monitor,
-// the CHIP-4 sound engine (pad box), the bitcrusher pedal. Plus the desk lamp,
-// lava lamp, monitors and MIDI keyboard that set the light in the room.
+// the CHIP-4 sound engine (pad box). Plus the desk lamp, monitors and MIDI
+// keyboard that set the light in the room.
 import * as THREE from "three";
 import { box, cyl, sphere, lathe, torus, group, std, glow, tube } from "../kit3d.js";
 import { canvasTexture, LiveScreen } from "../textures.js";
@@ -236,44 +236,6 @@ export function buildDesk(parent, studio, renderer) {
   };
   machines.push(engine);
 
-  /* ---------------- 8-BIT CRUSHER pedal ---------------- */
-  const ped = group({ parent, x: -0.84, y: TOP, z: -1.98, ry: 0.3 });
-  box(0.12, 0.055, 0.19, std(0x9a4c14, { rough: 0.5, metal: 0.3 }), { parent: ped, y: 0.0275, r: 0.008, cast: true });
-  const pedLabel = canvasTexture(256, 256, (g, w, h) => {
-    g.fillStyle = "#e0761a";
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = "#1a1008";
-    g.font = "bold 44px 'Helvetica Neue', Arial";
-    g.textAlign = "center";
-    g.fillText("8-BIT", w / 2, 150);
-    g.font = "bold 30px 'Helvetica Neue', Arial";
-    g.fillText("CRUSHER", w / 2, 188);
-    g.fillRect(40, 205, w - 80, 4);
-  });
-  const pl = new THREE.Mesh(new THREE.PlaneGeometry(0.115, 0.115), std(0x9a9a9a, { map: pedLabel, rough: 0.55 }));
-  pl.rotation.x = -Math.PI / 2;
-  pl.position.set(0, 0.0555, 0.0);
-  ped.add(pl);
-  for (let k = 0; k < 3; k++) cyl(0.011, 0.012, 0.016, std(0x111111, { rough: 0.4 }), { parent: ped, x: -0.035 + k * 0.035, y: 0.064, z: -0.06 });
-  cyl(0.013, 0.015, 0.018, std(0xb8b8b8, { metal: 0.9, rough: 0.2 }), { parent: ped, y: 0.063, z: 0.06 });
-  const pedLed = ledMat(0xff2010, 0.05);
-  sphere(0.006, pedLed, { parent: ped, y: 0.057, z: -0.02 });
-  tube([[0.06, 0.03, -0.05], [0.12, 0.01, -0.08], [0.2, 0.0, -0.05]], 0.004, std(0x0b0b0c), { parent: ped });
-  const crusher = machine({
-    id: "crusher",
-    label: "8-BIT CRUSHER",
-    hint: "Bitcrusher pedal — crush any tape or the whole room",
-    zone: "chip",
-    root: ped,
-    hit: [0.16, 0.12, 0.24],
-    hitOffset: [0, 0.04, 0],
-    focus: { pos: [0, 0.5, 0.62], target: [0, 0.03, 0], hfov: 52, light: 0, exposure: 0.45 }
-  });
-  crusher.update = (dt, t) => {
-    const s = studio.state.crusher;
-    pedLed.emissiveIntensity = s && s.room ? 3 + Math.sin(t * 6) * 0.3 : s && s.active ? 1.5 : 0.05;
-  };
-  machines.push(crusher);
 
   return { machines, animated, lights, anchors: { lampHead: new THREE.Vector3(...Hd), lampTarget: target.clone() } };
 }

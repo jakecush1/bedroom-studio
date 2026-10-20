@@ -10,6 +10,8 @@ import { buildDesk } from "./machines/desk.js";
 import { buildSideboard } from "./machines/sideboard.js";
 import { buildConsoles } from "./machines/consoles.js";
 import { buildGuitar } from "./machines/guitar.js";
+import { buildMaster } from "./machines/master.js";
+import { buildVox } from "./machines/vox.js";
 
 const HOME = {
   pos: new THREE.Vector3(0.02, 1.56, 2.28),
@@ -74,7 +76,9 @@ export class World extends Emitter {
       buildDesk(room.room, studio, renderer),
       buildSideboard(room.room, studio),
       buildConsoles(room.room, studio, room.anchors.consoleShelf),
-      buildGuitar(room.room, studio)
+      buildGuitar(room.room, studio),
+      buildMaster(room.room, studio),
+      buildVox(room.room, studio)
     ];
     for (const g of groups) {
       this.machines.push(...g.machines);

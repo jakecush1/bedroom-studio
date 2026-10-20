@@ -16,6 +16,20 @@ export const TOOLS = {
     layout: "side",
     load: () => import("./tuner/index.js")
   },
+  master: {
+    title: "MASTER-1 Mastering",
+    subtitle: "Warm · Balanced · Open · loudness targets · reference matching · true-peak limiter",
+    origin: "new · after LANDR, Matchering & ITU-R BS.1770",
+    width: "",
+    load: () => import("./master/index.js")
+  },
+  autotune: {
+    title: "VOX-1 Autotune",
+    subtitle: "Record or load a vocal · Subtle → Hard · detected or chosen key · formants kept",
+    origin: "new · pYIN pitch tracking + TD-PSOLA",
+    width: "",
+    load: () => import("./autotune/index.js")
+  },
   radio: {
     title: "Room 808 FM",
     subtitle: "Search the Internet Archive · stream · send tracks to any machine",
@@ -40,15 +54,6 @@ export const TOOLS = {
     width: "",
     load: () => import("./engine/index.js"),
     wip: "Loads MIDI carts and renders them with square / triangle / saw / noise voices, the six envelope presets and the drum synths from the sound engine."
-  },
-  crusher: {
-    title: "8-BIT CRUSHER",
-    subtitle: "Bit depth + sample-rate reduction · crush a tape or the whole room",
-    origin: "MP1_G1_Sound_Engine/bitcrusher.py",
-    width: "medium",
-    layout: "side",
-    load: () => import("./crusher/index.js"),
-    wip: "A real-time AudioWorklet version of bitcrusher_effect()."
   },
   scribe: {
     title: "SCRIBE",

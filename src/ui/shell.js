@@ -56,7 +56,7 @@ export class Shell {
       const wrap = el("div", `dock-group ${g.cls}`);
       wrap.appendChild(el("div", "dock-label", g.label));
       const row = el("div", "dock-row");
-      const order = ["jc808", "tuner", "scribe", "analyzer", "radio", "chipify", "engine", "crusher"];
+      const order = ["jc808", "tuner", "master", "autotune", "scribe", "analyzer", "radio", "chipify", "engine"];
       const list = this.world.machines.filter((x) => x.zone === g.zone).sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
       for (const m of list) {
         const b = el("button", "dock-chip");
@@ -389,6 +389,6 @@ export class Shell {
 }
 
 function shortName(m) {
-  const map = { jc808: "JC-808", tuner: "Tuner", scribe: "Scribe", analyzer: "Analyzer", radio: "Radio", chipify: "Chipify", engine: "CHIP-4", crusher: "Crusher" };
+  const map = { jc808: "JC-808", tuner: "Tuner", master: "Master", scribe: "Scribe", analyzer: "Analyzer", radio: "Radio", chipify: "Chipify", engine: "CHIP-4", autotune: "Autotune" };
   return map[m.id] || m.label;
 }

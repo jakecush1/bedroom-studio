@@ -1,7 +1,9 @@
 // Built-in carts and tapes that ship with the room.
 // MIDI: outputs of the G6 LSTM models plus public-domain Bach chorales and
-// their chipified versions. Audio: a procedurally rendered lofi demo loop.
+// their chipified versions. Audio: a procedurally rendered lofi demo loop and
+// a synthetic off-key singer for the autotune.
 import { renderDemoLoop } from "./demo.js";
+import { renderDemoVocal } from "./demovocal.js";
 
 const base = `${import.meta.env.BASE_URL}assets/midi/`;
 
@@ -25,6 +27,13 @@ export function registerBuiltins(library) {
     builtin: true,
     meta: { bpm: 84, key: "C major", chords: ["Fmaj7", "Em7", "Dm7", "Cmaj7"] },
     loader: (audio) => renderDemoLoop(audio)
+  });
+  library.addAudio({
+    name: "Off-key vocal (demo · A minor)",
+    source: "demo-vocal",
+    builtin: true,
+    meta: { key: "A minor" },
+    loader: (audio) => renderDemoVocal(audio)
   });
   // oldest first so the newest generations sit on top of the list
   CARTS.forEach(([file, name], i) => {
