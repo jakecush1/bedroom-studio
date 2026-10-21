@@ -11,7 +11,7 @@
 //   name      shown on the dial
 //   tagline   what the station plays (optional)
 //   location  city / region (optional)
-//   group     "Local" | "National" | anything — the dial groups by it
+//   group     "Local" | "Campus" | "National" | anything — the dial groups by it
 //   url       the stream (https:// works everywhere; http:// only on an http page)
 //   site      the station's website (optional, opens in a new tab)
 //
@@ -29,6 +29,28 @@ export const STATIONS = [
     // the Radio Player widget on kootenaycoopradio.com streams from this AzuraCast mount
     id: "kcr", name: "Kootenay Co-op Radio 93.5", tagline: "Community-powered radio · CJLY", location: "Nelson, BC",
     group: "Local", url: "https://a10.asurahosting.com:7410/radio.mp3", site: "https://www.kootenaycoopradio.com/"
+  },
+
+  // ---- Campus: college radio across Canada and the US (all CORS-friendly, so they hit the room meters) ----
+  {
+    id: "kexp", name: "KEXP 90.3 FM", tagline: "Where the music matters · born at the University of Washington", location: "Seattle, WA",
+    group: "Campus", url: "https://kexp.streamguys1.com/kexp160.aac", site: "https://www.kexp.org/"
+  },
+  {
+    id: "citr", name: "CiTR 101.9 FM", tagline: "UBC campus radio · Discorder magazine", location: "Vancouver, BC",
+    group: "Campus", url: "https://live.citr.ca/live.aac", site: "https://www.citr.ca/"
+  },
+  {
+    id: "ckut", name: "CKUT 90.3 FM", tagline: "McGill campus-community radio", location: "Montréal, QC",
+    group: "Campus", url: "https://ckut.out.airtime.pro/ckut_a", site: "https://ckut.ca/"
+  },
+  {
+    id: "cjsw", name: "CJSW 90.9 FM", tagline: "University of Calgary · independent since 1955", location: "Calgary, AB",
+    group: "Campus", url: "https://cjsw.leanstream.co/CJSWFM", site: "https://cjsw.com/"
+  },
+  {
+    id: "wprb", name: "WPRB 103.3 FM", tagline: "Princeton's freeform station · on air since 1940", location: "Princeton, NJ",
+    group: "Campus", url: "https://wprb.streamguys1.com/live", site: "https://wprb.com/"
   }
 
   // ---- National ----

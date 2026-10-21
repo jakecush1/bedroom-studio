@@ -98,10 +98,10 @@ export class Shell {
 
   /* ---------------- HUD buttons ---------------- */
   _hud() {
-    const rain = $("#btn-rain");
-    rain.addEventListener("click", () => {
-      const on = rain.getAttribute("aria-pressed") !== "true";
-      rain.setAttribute("aria-pressed", String(on));
+    const amb = $("#btn-ambience");
+    amb.addEventListener("click", () => {
+      const on = amb.getAttribute("aria-pressed") !== "true";
+      amb.setAttribute("aria-pressed", String(on));
       this.studio.ambience?.setEnabled(on);
     });
     const lofi = $("#btn-lofi");

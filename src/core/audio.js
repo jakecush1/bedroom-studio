@@ -2,7 +2,7 @@
 //
 //   tool buses ─► input ─► master ─► limiter ─► speakers
 //                                        └─► analyser (room meters)
-//   ambience (rain, vinyl) ─► ambience gain ─► speakers
+//   ambience (city rumble, off by default) ─► ambience gain ─► speakers
 //
 // Every machine in the room plays through a named bus so the room's VU
 // meters react to everything. (MASTER-1 monitors straight to the speakers so

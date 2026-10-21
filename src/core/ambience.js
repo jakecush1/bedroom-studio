@@ -1,4 +1,5 @@
-// Room tone: rain on the window, distant city rumble and the odd drip.
+// Room tone: a distant city rumble, off by default. (The rain used to play
+// here too; it's gone — the rain outside the window is visual only now.)
 // Generated from noise so there are no audio files to download.
 
 function noiseBuffer(ctx, seconds, color) {
@@ -32,7 +33,7 @@ function noiseBuffer(ctx, seconds, color) {
 export class Ambience {
   constructor(audio) {
     this.audio = audio;
-    this.enabled = true;
+    this.enabled = false;   // silent unless the HUD toggle is switched on
     this.started = false;
   }
 
@@ -41,21 +42,6 @@ export class Ambience {
     this.started = true;
     const ctx = this.audio.ctx;
     const out = this.audio.ambience;
-
-    // steady rain: pink noise shaped like rain on glass
-    const rain = ctx.createBufferSource();
-    rain.buffer = noiseBuffer(ctx, 6, "pink");
-    rain.loop = true;
-    const hp = ctx.createBiquadFilter();
-    hp.type = "highpass";
-    hp.frequency.value = 400;
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.value = 5200;
-    const rg = ctx.createGain();
-    rg.gain.value = 0.22;
-    rain.connect(hp).connect(lp).connect(rg).connect(out);
-    rain.start();
 
     // city rumble
     const rum = ctx.createBufferSource();
@@ -69,39 +55,7 @@ export class Ambience {
     rum.connect(rlp).connect(rumG).connect(out);
     rum.start();
 
-    // slow swell so the rain breathes
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 0.05;
-    const lfoG = ctx.createGain();
-    lfoG.gain.value = 0.07;
-    lfo.connect(lfoG).connect(rg.gain);
-    lfo.start();
-
-    // drips and taps on the sill
-    const white = noiseBuffer(ctx, 1, "white");
-    const drip = () => {
-      if (!this.started) return;
-      const t = ctx.currentTime + 0.01;
-      const s = ctx.createBufferSource();
-      s.buffer = white;
-      const bp = ctx.createBiquadFilter();
-      bp.type = "bandpass";
-      bp.frequency.value = 1800 + Math.random() * 3800;
-      bp.Q.value = 6 + Math.random() * 10;
-      const g = ctx.createGain();
-      const amp = 0.04 + Math.random() * 0.12;
-      g.gain.setValueAtTime(0.0001, t);
-      g.gain.exponentialRampToValueAtTime(amp, t + 0.002);
-      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.03 + Math.random() * 0.05);
-      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-      if (pan) pan.pan.value = Math.random() * 1.6 - 0.8;
-      s.connect(bp).connect(g);
-      (pan ? g.connect(pan) : g).connect(out);
-      s.start(t, Math.random() * 0.9, 0.1);
-      setTimeout(drip, 40 + Math.random() * 260);
-    };
-    drip();
-    this.nodes = { rain, rum, lfo };
+    this.nodes = { rum };
     this.setEnabled(this.enabled);
   }
 

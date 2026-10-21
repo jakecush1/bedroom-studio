@@ -7,7 +7,7 @@ import { el, button, knob, field, screen, select, clamp, pct } from "../../ui/ki
 import { STATIONS, validStation } from "./stations.js";
 
 const STORE = "room808.radio";
-const GROUP_ORDER = ["Local", "National", "Starter", "Your stations"];
+const GROUP_ORDER = ["Local", "Campus", "National", "Your stations"];
 
 export function create(studio, host) {
   const saved = (() => { try { return JSON.parse(localStorage.getItem(STORE)) || {}; } catch (e) { return {}; } })();
