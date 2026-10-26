@@ -72,6 +72,27 @@ export function mountJC808(root, studio) {
   ];
   const PATCH_KEYS = Object.keys(LEAD_PATCH);
 
+  // Synth patch presets: a starting sound for the selected lane. Each one
+  // only sets the sound (oscillator, filter, envelope, octave, mono); the
+  // lane's level, arp and latch are left as they are, except where a preset
+  // is built around the arp.
+  const SYNTH_PRESETS = [
+    { name: "Fat Bass",    patch: { wave: "sawtooth", octave: -1, detune: 6, sub: 0.7, cutoff: 0.38, reso: 3, envAmt: 0.45, attack: 0.005, decay: 0.25, sustain: 0.35, release: 0.14, mono: true } },
+    { name: "Acid Bass",   patch: { wave: "sawtooth", octave: -1, detune: 0, sub: 0.15, cutoff: 0.3, reso: 11, envAmt: 0.75, attack: 0.003, decay: 0.18, sustain: 0.1, release: 0.1, mono: true } },
+    { name: "Sub Bass",    patch: { wave: "sine", octave: -1, detune: 0, sub: 0.9, cutoff: 0.5, reso: 0.5, envAmt: 0.1, attack: 0.008, decay: 0.3, sustain: 0.8, release: 0.2, mono: true } },
+    { name: "Square Bass", patch: { wave: "square", octave: -1, detune: 3, sub: 0.4, cutoff: 0.45, reso: 2, envAmt: 0.35, attack: 0.004, decay: 0.2, sustain: 0.5, release: 0.12, mono: true } },
+    { name: "Pluck",       patch: { wave: "sawtooth", octave: 0, detune: 10, sub: 0.1, cutoff: 0.4, reso: 4, envAmt: 0.7, attack: 0.002, decay: 0.16, sustain: 0.0, release: 0.18, mono: false } },
+    { name: "Brass Lead",  patch: { wave: "sawtooth", octave: 0, detune: 12, sub: 0.2, cutoff: 0.55, reso: 1.5, envAmt: 0.5, attack: 0.06, decay: 0.3, sustain: 0.7, release: 0.25, mono: false } },
+    { name: "Square Lead", patch: { wave: "square", octave: 0, detune: 7, sub: 0.0, cutoff: 0.7, reso: 2, envAmt: 0.3, attack: 0.01, decay: 0.2, sustain: 0.6, release: 0.2, mono: true } },
+    { name: "Soft Pad",    patch: { wave: "triangle", octave: 0, detune: 14, sub: 0.3, cutoff: 0.5, reso: 1, envAmt: 0.25, attack: 0.6, decay: 0.8, sustain: 0.8, release: 1.6, mono: false } },
+    { name: "Strings",     patch: { wave: "sawtooth", octave: 0, detune: 18, sub: 0.0, cutoff: 0.48, reso: 0.8, envAmt: 0.2, attack: 0.35, decay: 0.6, sustain: 0.85, release: 1.1, mono: false } },
+    { name: "Bell",        patch: { wave: "sine", octave: 1, detune: 24, sub: 0.0, cutoff: 0.9, reso: 0.5, envAmt: 0.0, attack: 0.002, decay: 0.9, sustain: 0.0, release: 1.2, mono: false } },
+    { name: "Organ",       patch: { wave: "square", octave: 0, detune: 4, sub: 0.6, cutoff: 0.75, reso: 0.5, envAmt: 0.0, attack: 0.01, decay: 0.1, sustain: 1.0, release: 0.06, mono: false } },
+    { name: "Chip Lead",   patch: { wave: "square", octave: 1, detune: 0, sub: 0.0, cutoff: 1.0, reso: 0.5, envAmt: 0.0, attack: 0.001, decay: 0.08, sustain: 0.7, release: 0.04, mono: true } },
+    { name: "Arp Pulse",   patch: { wave: "square", octave: 0, detune: 5, sub: 0.2, cutoff: 0.5, reso: 5, envAmt: 0.6, attack: 0.002, decay: 0.12, sustain: 0.1, release: 0.1, mono: false, arp: true, arpMode: "up", arpRate: "1/16", arpOct: 2, arpGate: 0.5 } },
+    { name: "Arp Dream",   patch: { wave: "triangle", octave: 0, detune: 9, sub: 0.25, cutoff: 0.6, reso: 2, envAmt: 0.3, attack: 0.01, decay: 0.35, sustain: 0.3, release: 0.6, mono: false, arp: true, arpMode: "updown", arpRate: "1/8", arpOct: 2, arpGate: 0.8 } }
+  ];
+
   /* ============================================================
      2. AUDIO ENGINE
      Built per-AudioContext so the same code renders live and
@@ -2535,6 +2556,32 @@ export function mountJC808(root, studio) {
       label: "Reverb", min: 0, max: 0.8, value: state.fx.reverb, step: 0.01, format: pct,
       onChange: function (v) { state.fx.reverb = v; applyMaster(); save(); }
     }));
+
+    // patch presets for the selected lane; "Lane default" restores its init patch
+    const patchSel = $("#jc-patchSel");
+    SYNTH_PRESETS.forEach(function (p, i) {
+      const o = el("option", null, p.name);
+      o.value = String(i);
+      patchSel.appendChild(o);
+    });
+    const dflt = el("option", null, "Lane default");
+    dflt.value = "default";
+    patchSel.appendChild(dflt);
+    patchSel.addEventListener("change", function () {
+      if (!this.value) return;
+      const lane = LANES[state.lane];
+      let patch, name;
+      if (this.value === "default") { patch = lane.def; name = lane.name + " default"; }
+      else { patch = SYNTH_PRESETS[+this.value].patch; name = SYNTH_PRESETS[+this.value].name; }
+      this.value = "";
+      allNotesOff(true);
+      loadPatch(S(), patch);
+      arpIndex = 0;
+      refreshSynthUI();
+      applyMaster();
+      save();
+      toast("Loaded “" + name + "” on the " + lane.name + " lane");
+    });
 
     $("#jc-monoBtn").addEventListener("click", function () {
       S().mono = !S().mono;

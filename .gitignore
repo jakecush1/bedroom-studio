@@ -23,3 +23,6 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 *.sw?
+
+# standalone JC-808 build (published to ../jc-808 by update.sh)
+dist-jc808/
