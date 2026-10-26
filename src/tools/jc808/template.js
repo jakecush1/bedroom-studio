@@ -216,7 +216,7 @@ export const TEMPLATE = `
         <dl>
           <dt>Accent</dt><dd>The bottom lane lifts every hit on that step</dd>
           <dt>Echo / Reverb</dt><dd>Off by default. Set “Click paints” to Echo or Reverb and click a step to send that hit to the effect (shift-click / alt-click does the same from any mode); the Echo and Reverb faders set how much. Each voice and step is separate, so a reverb on the snare leaves the kick dry</dd>
-          <dt>Arp</dt><dd>Runs off the sequencer clock — press play, then hold keys</dd>
+          <dt>Arp</dt><dd>Hold keys and it plays — locked to the sequencer while the beat runs, on its own clock when stopped</dd>
           <dt>Latch</dt><dd>Each key toggles in and out of the chord; Panic clears it</dd>
           <dt>Patch</dt><dd>Loads a preset sound (basses, leads, pads, bell, organ, arps) onto the selected lane; the faders then show what it set, so tweak from there. “Lane default” restores the lane's starting sound</dd>
           <dt>Lanes</dt><dd>Bass and Lead each have their own patch, loop length and quantize; a bar is 16 steps, so a 2-bar bass can loop under a 16-bar lead</dd>

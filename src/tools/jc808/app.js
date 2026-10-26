@@ -600,7 +600,43 @@ export function mountJC808(root, studio) {
       }
     };
   }
-  const ticker = makeTicker(function () { if (state.playing) scheduler(); }, LOOKAHEAD);
+  const ticker = makeTicker(function () {
+    if (state.playing) scheduler();
+    else if (arpFree) arpScheduler();
+  }, LOOKAHEAD);
+
+  // The arpeggiator normally rides the sequencer clock. While the transport
+  // is stopped it runs on this clock of its own instead, so holding keys
+  // (or picking an arp patch) is enough to hear it.
+  let arpFree = false, arpStep = 0, arpNextTime = 0;
+  function arpHasNotes() {
+    const S = state.synth;
+    return S.arp && (heldOrder.length > 0 || (S.latch && latched.length > 0));
+  }
+  function arpWake() {
+    if (state.playing || arpFree || !arpHasNotes()) return;
+    ensureAudio();
+    arpFree = true;
+    arpStep = 0;
+    arpNextTime = ctx.currentTime + 0.02;
+    arpScheduler();
+    ticker.start();
+  }
+  function arpSleep() {
+    if (!arpFree) return;
+    arpFree = false;
+    if (!state.playing) ticker.stop();
+  }
+  function arpCheck() { if (arpFree && !arpHasNotes()) arpSleep(); }
+  function arpScheduler() {
+    const now = ctx.currentTime;
+    if (!arpHasNotes()) return arpSleep();
+    while (arpNextTime < now + HORIZON) {
+      scheduleArp(engine, arpStep, arpNextTime, null);
+      arpStep++;
+      arpNextTime += stepDur();
+    }
+  }
 
   let currentStep = 0;
   let nextStepTime = 0;
@@ -666,6 +702,7 @@ export function mountJC808(root, studio) {
     anchorTime = nextStepTime;
     state.lanes.forEach(function (l) { l.track.notes.forEach(function (n) { delete n._abs; }); });
     rollDirty = true;
+    arpFree = false;          // the sequencer clock drives the arp from here
     scheduler();
     ticker.start();
     const b = $("#jc-playBtn");
@@ -820,7 +857,7 @@ export function mountJC808(root, studio) {
   function noteOn(midi) {
     if (held.has(midi)) return;
     if (heldOrder.indexOf(midi) === -1) heldOrder.push(midi);
-    if (state.synth.arp) { paintKey(midi, true); return; }  // arp plays it, not us
+    if (state.synth.arp) { paintKey(midi, true); arpWake(); return; }  // arp plays it, not us
     if (state.synth.mono) {
       // stealing a voice must clear its key too, or mono still looks polyphonic
       held.forEach(function (v, m) { endNote(v); held.delete(m); paintKey(m, false); recNoteOff(m); });
@@ -843,10 +880,12 @@ export function mountJC808(root, studio) {
     const v = held.get(midi);
     if (v) { endNote(v); held.delete(midi); recNoteOff(midi); }
     if (!state.synth.latch || !state.synth.arp) paintKey(midi, false);
+    arpCheck();
   }
 
   function allNotesOff(clearLatch) {
     recCloseAll();
+    arpSleep();
     held.forEach(function (v) { endNote(v); });
     held.clear();
     heldOrder.length = 0;
@@ -1938,6 +1977,8 @@ export function mountJC808(root, studio) {
       else latched.splice(latched.indexOf(midi), 1);
       Object.keys(keyEls).forEach(function (m) { paintKey(Number(m), latched.indexOf(Number(m)) > -1); });
       heldOrder.push(midi);
+      arpWake();
+      arpCheck();
       return;
     }
     noteOn(midi);
@@ -1962,6 +2003,12 @@ export function mountJC808(root, studio) {
   }
 
   const isActive = () => studio.activeTool === "jc808";
+
+  // picking from a dropdown leaves it focused, which would swallow the
+  // synth keys and the drum pads — hand focus back as soon as it is used
+  root.addEventListener("change", function (e) {
+    if (e.target && e.target.tagName === "SELECT") e.target.blur();
+  });
 
   document.addEventListener("keydown", function (e) {
     if (!isActive()) return;
