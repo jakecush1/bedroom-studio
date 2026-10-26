@@ -12,11 +12,14 @@ MSG="${1:-update}"
 
 git add .
 git diff --cached --quiet || git commit -m "$MSG"
+git pull --rebase --quiet
 git push
 
 JC=../jc-808
 if [ -d "$JC/.git" ]; then
   echo "— publishing the JC-808 to $JC"
+  # pick up anything edited on GitHub (the README, say) before overwriting the build
+  git -C "$JC" pull --rebase --quiet
   npx vite build --config vite.standalone.config.js
   # replace everything but git bookkeeping and the README
   find "$JC" -mindepth 1 -maxdepth 1 ! -name .git ! -name .gitignore ! -name README.md -exec rm -rf {} +
