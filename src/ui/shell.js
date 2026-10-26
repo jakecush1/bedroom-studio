@@ -256,12 +256,14 @@ export class Shell {
     const sx = Math.max(0.05, rect.w / box.w), sy = Math.max(0.05, rect.h / box.h);
     const from = `translate(${rect.x - box.left}px, ${rect.y - box.top}px) scale(${sx}, ${sy})`;
     if (matchMedia("(prefers-reduced-motion: reduce)").matches) return Promise.resolve();
+    // transform + opacity only: both run on the compositor, so a panel the
+    // size of the JC-808 unfolds without re-rasterising hundreds of buttons
     const anim = panel.animate(
       [
-        { transform: from, opacity: 0, filter: "blur(6px)" },
-        { transform: "none", opacity: 1, filter: "blur(0px)" }
+        { transform: from, opacity: 0 },
+        { transform: "none", opacity: 1 }
       ],
-      { duration: 520, easing: "cubic-bezier(.2,.8,.2,1)" }
+      { duration: 380, easing: "cubic-bezier(.2,.8,.2,1)" }
     );
     return anim.finished.catch(() => {});
   }
@@ -276,7 +278,7 @@ export class Shell {
           { transform: "none", opacity: 1 },
           { transform: `translate(${rect.x - r.left}px, ${rect.y - r.top}px) scale(${sx}, ${sy})`, opacity: 0 }
         ],
-        { duration: 340, easing: "cubic-bezier(.6,0,.8,.4)" }
+        { duration: 260, easing: "cubic-bezier(.6,0,.8,.4)" }
       );
       await anim.finished.catch(() => {});
     }

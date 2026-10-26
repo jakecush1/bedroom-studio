@@ -19,8 +19,8 @@
 .jc808 .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 16px; border-bottom: 1px solid var(--edge-soft); }
 .jc808 .panel-title { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--cream-dim); margin: 0; font-weight: 600; }
 .jc808 .panel-body { padding: 16px; }
-.jc808 .transport { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; padding: 16px; }
-.jc808 .transport-group { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-right: 22px; border-right: 1px solid var(--edge-soft); }
+.jc808 .transport { display: flex; align-items: flex-end; gap: 22px; flex-wrap: wrap; padding: 16px; }
+.jc808 .transport-group { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; padding-right: 22px; border-right: 1px solid var(--edge-soft); align-self: stretch; }
 .jc808 .transport-group:last-child { border-right: 0; padding-right: 0; }
 .jc808 .play-btn { width: 62px; height: 62px; border-radius: 50%; border: 1px solid var(--edge); background: linear-gradient(180deg, #34343a, #202024); box-shadow: 0 2px 0 rgba(255,255,255,0.05) inset, 0 6px 14px rgba(0,0,0,0.45); display: grid; place-items: center; transition: transform 0.08s ease, box-shadow 0.15s ease; }
 .jc808 .play-btn:active { transform: translateY(2px); box-shadow: 0 4px 8px rgba(0,0,0,0.4); }
@@ -74,19 +74,37 @@
 .jc808 .step.playhead { outline: 2px solid var(--cream); outline-offset: 1px; }
 .jc808 .step.past-length { opacity: 0.22; }
 .jc808 .track.accent .step { height: 24px; }
+/* echo / reverb markers on a hit, and the paint modes */
+.jc808 .step .fx-e, .jc808 .step .fx-r { position: absolute; top: 4px; width: 7px; height: 7px; border-radius: 50%; display: none; pointer-events: none; border: 1px solid rgba(0,0,0,0.6); }
+.jc808 .step .fx-e { left: 4px; background: #6ff0ff; box-shadow: 0 0 6px #6ff0ff; }
+.jc808 .step .fx-r { right: 4px; background: #c69bff; box-shadow: 0 0 6px #c69bff; }
+.jc808 .step.has-echo .fx-e, .jc808 .step.has-verb .fx-r { display: block; }
+.jc808 .machine.mode-echo .step, .jc808 .machine.mode-verb .step { cursor: cell; }
+.jc808 .machine.mode-echo .step:not(.on):hover::before, .jc808 .machine.mode-verb .step:not(.on):hover::before { content: ""; position: absolute; inset: 0; border-radius: 3px; border: 1px dashed rgba(255,255,255,0.45); }
+.jc808 .machine.mode-echo .step .fx-r, .jc808 .machine.mode-verb .step .fx-e { opacity: 0.45; }
+.jc808 .machine.mode-echo .step.has-echo { outline: 1px solid rgba(111,240,255,0.7); outline-offset: -1px; }
+.jc808 .machine.mode-verb .step.has-verb { outline: 1px solid rgba(198,155,255,0.7); outline-offset: -1px; }
+.jc808 .rhythm-head { align-items: flex-end; }
+.jc808 .rhythm-tools { display: flex; gap: 16px; align-items: flex-end; flex-wrap: wrap; }
+.jc808 .fx-sends { display: flex; gap: 6px; align-items: flex-end; }
+.jc808 .hint-text { letter-spacing: 0.1em; text-transform: none; max-width: 420px; line-height: 1.5; }
+.jc808 .fx-key { display: inline-block; width: 8px; height: 8px; border-radius: 50%; vertical-align: middle; margin: 0 2px 2px 0; }
+.jc808 .fx-key-e { background: #6ff0ff; box-shadow: 0 0 5px #6ff0ff; }
+.jc808 .fx-key-r { background: #c69bff; box-shadow: 0 0 5px #c69bff; }
 .jc808 .track.accent .step.on { background: linear-gradient(180deg, #fff2d2, #ffb545); }
-.jc808 .voice-strip { grid-column: 1 / -1; display: none; gap: 26px; align-items: center; padding: 12px 14px; margin: 4px 0 8px; background: var(--panel-lo); border: 1px solid var(--edge-soft); border-radius: var(--radius); }
+.jc808 .voice-strip { grid-column: 1 / -1; display: none; gap: 26px; align-items: flex-end; padding: 12px 14px; margin: 4px 0 8px; background: var(--panel-lo); border: 1px solid var(--edge-soft); border-radius: var(--radius); }
 .jc808 .track.expanded .voice-strip { display: flex; flex-wrap: wrap; }
-.jc808 .knob-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 60px; flex: none; }
-.jc808 .knob { width: 44px; height: 44px; border-radius: 50%; border: 0; padding: 0; background: transparent; cursor: ns-resize; touch-action: none; position: relative; }
-.jc808 .knob svg { width: 100%; height: 100%; display: block; }
-.jc808 .knob .dial { fill: url(#knobGrad); stroke: #45454d; stroke-width: 1; }
-.jc808 .knob .arc-bg { stroke: #16161a; stroke-width: 3.5; fill: none; stroke-linecap: round; }
-.jc808 .knob .arc { stroke: var(--accent); stroke-width: 3.5; fill: none; stroke-linecap: round; }
-.jc808 .knob .pointer { stroke: var(--cream); stroke-width: 2.4; stroke-linecap: round; }
+.jc808 .knob-wrap { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 52px; flex: none; }
+.jc808 .fader { position: relative; display: block; width: 40px; height: 88px; border: 0; padding: 0; background: transparent; cursor: ns-resize; touch-action: none; }
+.jc808 .fader-track { position: absolute; left: 50%; top: 4px; bottom: 4px; width: 7px; margin-left: -3.5px; border-radius: 4px; background: #101013; box-shadow: inset 0 1px 3px rgba(0,0,0,0.9), 0 1px 0 rgba(255,255,255,0.05); }
+.jc808 .fader-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; border-radius: 4px; background: var(--accent); opacity: 0.85; }
+.jc808 .fader-cap { position: absolute; left: 50%; bottom: 0; width: 30px; height: 14px; margin-left: -15px; border-radius: 3px; background: linear-gradient(180deg, #4a4a52, #28282d); border: 1px solid #0b0b0d; box-shadow: 0 2px 5px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.14); }
+.jc808 .fader-cap::after { content: ""; position: absolute; left: 4px; right: 4px; top: 6px; height: 1px; background: var(--cream); opacity: 0.8; }
+.jc808 .fader:hover .fader-cap, .jc808 .fader.dragging .fader-cap { background: linear-gradient(180deg, #5a5a64, #323238); }
+.jc808 .fader.dragging .fader-cap { border-color: var(--accent); }
 .jc808 .knob-label { font-size: 8px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); text-align: center; }
-.jc808 .knob-value { font-family: var(--mono); font-size: 10px; color: var(--cream-dim); }
-.jc808 .synth-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; padding: 16px; }
+.jc808 .knob-value { font-family: var(--mono); font-size: 10px; color: var(--cream-dim); min-height: 13px; }
+.jc808 .synth-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(264px, 1fr)); gap: 18px; padding: 16px; }
 .jc808 .module { background: var(--panel-lo); border: 1px solid var(--edge-soft); border-radius: var(--radius); padding: 12px 14px; }
 .jc808 .module h3 { margin: 0 0 12px; font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--accent); font-weight: 600; }
 .jc808 .module-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
@@ -94,8 +112,8 @@
 .jc808 .seg button { background: #202025; border: 0; border-right: 1px solid var(--edge); color: var(--muted); font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; padding: 7px 9px; }
 .jc808 .seg button:last-child { border-right: 0; }
 .jc808 .seg button.on { background: linear-gradient(180deg, #ff6b2c, #d94a15); color: #fff; }
-.jc808 .keyboard-wrap { padding: 0 16px 18px; overflow-x: auto; }
-.jc808 .keyboard { position: relative; display: flex; height: 150px; min-width: 640px; user-select: none; -webkit-user-select: none; touch-action: none; background: #101013; border: 1px solid var(--edge-soft); border-radius: 0 0 8px 8px; padding: 6px 6px 0; }
+.jc808 .keyboard-wrap { padding: 14px 16px 4px; overflow-x: auto; }
+.jc808 .keyboard { position: relative; display: flex; height: 150px; min-width: 640px; user-select: none; -webkit-user-select: none; touch-action: none; background: #101013; border: 1px solid var(--edge-soft); border-radius: 8px; padding: 6px 6px 0; }
 .jc808 .wkey, .jc808 .bkey { position: relative; border: 0; padding: 0; border-radius: 0 0 5px 5px; cursor: pointer; touch-action: none; }
 .jc808 .wkey { flex: 1; background: linear-gradient(180deg, #f4efe4 0%, #ded7c7 88%, #c3bcac 100%); box-shadow: 0 3px 0 #8e8879, inset -1px 0 0 rgba(0,0,0,0.22); margin-right: 2px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 9px; }
 .jc808 .wkey.down { background: linear-gradient(180deg, #ffb98c 0%, #ff8a4c 100%); box-shadow: 0 1px 0 #8e8879; transform: translateY(2px); }

@@ -15,6 +15,7 @@ import {
   addNote, notesStartingInStep, noteAt, pitchRange, normaliseTrack, serialiseTrack,
   trackToMidiNotes, barBeat
 } from "./track.js";
+import { emptyBank as emptyBankFor, packBank as packBankFor, normaliseBank, unpackLane } from "./bank.js";
 
 export function mountJC808(root, studio) {
 
@@ -135,37 +136,46 @@ export function mountJC808(root, studio) {
       return g;
     });
 
-    // sync'd stereo-ish delay
+    // One tempo-synced delay and one plate-ish reverb, fed by four sends:
+    // the synth lanes' Delay / Reverb amounts, and the drum machine's Echo /
+    // Reverb amounts (which only carry the steps painted with them — the
+    // drums are dry unless a step asks). The returns are fixed, so turning
+    // one send down never silences another.
     E.delay = ctx.createDelay(2);
     E.delayFb = ctx.createGain();
     E.delayFb.gain.value = 0.35;
-    E.delayMix = ctx.createGain();
-    E.delayMix.gain.value = 0;
     E.delayFilter = ctx.createBiquadFilter();
     E.delayFilter.type = "lowpass";
     E.delayFilter.frequency.value = 3200;
+    E.delayReturn = ctx.createGain();
+    E.delayReturn.gain.value = 1;
 
-    // plate-ish reverb
     E.reverb = ctx.createConvolver();
     E.reverb.buffer = makeImpulse(ctx, 2.4, 2.6);
-    E.reverbMix = ctx.createGain();
-    E.reverbMix.gain.value = 0;
+    E.reverbReturn = ctx.createGain();
+    E.reverbReturn.gain.value = 1;
+
+    E.synthDelaySend = ctx.createGain();
+    E.synthVerbSend = ctx.createGain();
+    E.drumEchoSend = ctx.createGain();
+    E.drumVerbSend = ctx.createGain();
+    [E.synthDelaySend, E.synthVerbSend, E.drumEchoSend, E.drumVerbSend].forEach(function (g) { g.gain.value = 0; });
 
     E.drumBus.connect(E.drive);
     E.synthBus.connect(E.drive);
 
-    E.synthBus.connect(E.delay);
-    E.drumBus.connect(E.delay);
+    E.synthBus.connect(E.synthDelaySend).connect(E.delay);
+    E.drumEchoSend.connect(E.delay);
     E.delay.connect(E.delayFilter);
     E.delayFilter.connect(E.delayFb);
     E.delayFb.connect(E.delay);
-    E.delayFilter.connect(E.delayMix);
-    E.delayMix.connect(E.drive);
+    E.delayFilter.connect(E.delayReturn);
+    E.delayReturn.connect(E.drive);
 
-    E.synthBus.connect(E.reverb);
-    E.drumBus.connect(E.reverb);
-    E.reverb.connect(E.reverbMix);
-    E.reverbMix.connect(E.drive);
+    E.synthBus.connect(E.synthVerbSend).connect(E.reverb);
+    E.drumVerbSend.connect(E.reverb);
+    E.reverb.connect(E.reverbReturn);
+    E.reverbReturn.connect(E.drive);
 
     E.drive.connect(E.comp);
     E.comp.connect(E.master);
@@ -197,7 +207,7 @@ export function mountJC808(root, studio) {
   /* ---------- individual voices ---------- */
 
   const SYNTH = {
-    BD: function (E, t, vel, p) {
+    BD: function (E, t, vel, p, dest) {
       const ctx = E.ctx;
       const base = lerp(38, 68, p.tune);
       const dur = lerp(0.18, 1.25, p.decay);
@@ -214,13 +224,13 @@ export function mountJC808(root, studio) {
       clf.frequency.value = 2200;
       const clg = ctx.createGain();
       env(clg.gain, t, vel * 0.18, 0.001, 0.018);
-      cl.connect(clf).connect(clg).connect(E.drumBus);
-      o.connect(g).connect(E.drumBus);
+      cl.connect(clf).connect(clg).connect(dest);
+      o.connect(g).connect(dest);
       o.start(t);
       o.stop(t + dur + 0.06);
     },
 
-    SD: function (E, t, vel, p) {
+    SD: function (E, t, vel, p, dest) {
       const ctx = E.ctx;
       const f = lerp(140, 260, p.tune);
       const bodyDur = 0.13;
@@ -231,7 +241,7 @@ export function mountJC808(root, studio) {
         o.frequency.exponentialRampToValueAtTime(freq, t + 0.02);
         const g = ctx.createGain();
         env(g.gain, t, vel * (i ? 0.4 : 0.62), 0.002, bodyDur);
-        o.connect(g).connect(E.drumBus);
+        o.connect(g).connect(dest);
         o.start(t);
         o.stop(t + bodyDur + 0.05);
       });
@@ -246,11 +256,11 @@ export function mountJC808(root, studio) {
       bp.Q.value = 0.7;
       const g = ctx.createGain();
       env(g.gain, t, vel * 0.85, 0.001, snapDur);
-      n.connect(hp).connect(bp).connect(g).connect(E.drumBus);
+      n.connect(hp).connect(bp).connect(g).connect(dest);
     },
 
     tom: function (baseLo, baseHi) {
-      return function (E, t, vel, p) {
+      return function (E, t, vel, p, dest) {
         const ctx = E.ctx;
         const f = lerp(baseLo, baseHi, p.tune);
         const dur = lerp(0.2, 0.9, p.decay);
@@ -260,7 +270,7 @@ export function mountJC808(root, studio) {
         o.frequency.exponentialRampToValueAtTime(f, t + 0.09);
         const g = ctx.createGain();
         env(g.gain, t, vel * 0.9, 0.003, dur);
-        o.connect(g).connect(E.drumBus);
+        o.connect(g).connect(dest);
         o.start(t);
         o.stop(t + dur + 0.05);
         // skin transient
@@ -270,11 +280,11 @@ export function mountJC808(root, studio) {
         bp.frequency.value = f * 4;
         const ng = ctx.createGain();
         env(ng.gain, t, vel * 0.12, 0.001, 0.03);
-        n.connect(bp).connect(ng).connect(E.drumBus);
+        n.connect(bp).connect(ng).connect(dest);
       };
     },
 
-    RS: function (E, t, vel, p) {
+    RS: function (E, t, vel, p, dest) {
       const ctx = E.ctx;
       const dur = lerp(0.02, 0.09, p.decay);
       const f = lerp(1300, 2200, p.tune);
@@ -284,7 +294,7 @@ export function mountJC808(root, studio) {
         o.frequency.value = freq;
         const g = ctx.createGain();
         env(g.gain, t, vel * 0.32, 0.0008, dur);
-        o.connect(g).connect(E.drumBus);
+        o.connect(g).connect(dest);
         o.start(t);
         o.stop(t + dur + 0.02);
       });
@@ -295,10 +305,10 @@ export function mountJC808(root, studio) {
       bp.Q.value = 2;
       const ng = ctx.createGain();
       env(ng.gain, t, vel * 0.3, 0.0008, dur);
-      n.connect(bp).connect(ng).connect(E.drumBus);
+      n.connect(bp).connect(ng).connect(dest);
     },
 
-    CP: function (E, t, vel, p) {
+    CP: function (E, t, vel, p, dest) {
       const ctx = E.ctx;
       const tail = lerp(0.12, 0.5, p.decay);
       const bp = ctx.createBiquadFilter();
@@ -310,7 +320,7 @@ export function mountJC808(root, studio) {
       hp.frequency.value = 600;
       const g = ctx.createGain();
       const n = noiseSource(E, t, tail + 0.05);
-      n.connect(bp).connect(hp).connect(g).connect(E.drumBus);
+      n.connect(bp).connect(hp).connect(g).connect(dest);
       // three fast slaps then the room tail
       const gp = g.gain;
       gp.setValueAtTime(0.0001, t);
@@ -323,7 +333,7 @@ export function mountJC808(root, studio) {
       gp.exponentialRampToValueAtTime(0.0001, t + 0.034 + tail);
     },
 
-    CB: function (E, t, vel, p) {
+    CB: function (E, t, vel, p, dest) {
       const ctx = E.ctx;
       const dur = lerp(0.12, 0.55, p.decay);
       const f = lerp(440, 700, p.tune);
@@ -333,7 +343,7 @@ export function mountJC808(root, studio) {
       bp.Q.value = 1.6;
       const g = ctx.createGain();
       env(g.gain, t, vel * 0.5, 0.002, dur);
-      bp.connect(g).connect(E.drumBus);
+      bp.connect(g).connect(dest);
       [f, f * 1.48].forEach(function (freq) {
         const o = ctx.createOscillator();
         o.type = "square";
@@ -346,7 +356,7 @@ export function mountJC808(root, studio) {
 
     metal: function (kind) {
       // kind: "CH" | "OH" | "CY"
-      return function (E, t, vel, p) {
+      return function (E, t, vel, p, dest) {
         const ctx = E.ctx;
         const fund = lerp(30, 52, p.tune);
         let dur;
@@ -372,7 +382,7 @@ export function mountJC808(root, studio) {
         bp.frequency.value = kind === "CY" ? 6500 : 10000;
         bp.Q.value = 0.6;
         const g = ctx.createGain();
-        bank.connect(hp).connect(bp).connect(g).connect(E.drumBus);
+        bank.connect(hp).connect(bp).connect(g).connect(dest);
 
         if (kind === "CY") {
           // two-stage: bright ping into a long wash
@@ -397,7 +407,7 @@ export function mountJC808(root, studio) {
       };
     },
 
-    MA: function (E, t, vel, p) {
+    MA: function (E, t, vel, p, dest) {
       const ctx = E.ctx;
       const dur = lerp(0.02, 0.12, p.decay);
       const n = noiseSource(E, t, dur);
@@ -406,7 +416,7 @@ export function mountJC808(root, studio) {
       hp.frequency.value = lerp(4000, 9000, p.tune);
       const g = ctx.createGain();
       env(g.gain, t, vel * 0.5, 0.001, dur, "linear");
-      n.connect(hp).connect(g).connect(E.drumBus);
+      n.connect(hp).connect(g).connect(dest);
     }
   };
 
@@ -425,10 +435,19 @@ export function mountJC808(root, studio) {
     MA: SYNTH.MA
   };
 
-  function trigger(E, id, t, velocity) {
+  // fx: { echo, verb } — a hit normally goes straight to the drum bus; a
+  // step painted with Echo or Reverb gets its own tap into those sends
+  function trigger(E, id, t, velocity, fx) {
     const p = state.voices[id];
     if (!p) return;
-    VOICE_FN[id](E, t, clamp(velocity * p.level, 0.0005, 1.4), p);
+    let dest = E.drumBus;
+    if (fx && (fx.echo || fx.verb)) {
+      dest = E.ctx.createGain();
+      dest.connect(E.drumBus);
+      if (fx.echo) dest.connect(E.drumEchoSend);
+      if (fx.verb) dest.connect(E.drumVerbSend);
+    }
+    VOICE_FN[id](E, t, clamp(velocity * p.level, 0.0005, 1.4), p, dest);
   }
 
   /* ============================================================
@@ -437,11 +456,10 @@ export function mountJC808(root, studio) {
 
   const BANKS = ["A", "B", "C", "D"];
 
-  function emptyBank() {
-    const steps = {};
-    VOICE_IDS.forEach(function (id) { steps[id] = new Array(16).fill(false); });
-    return { steps: steps, accent: new Array(16).fill(false), length: 16 };
-  }
+  // steps / echo / verb: voiceId -> 16 booleans. echo and verb mark the
+  // hits that go to the drum Echo and Reverb sends; empty by default.
+  const emptyBank = () => emptyBankFor(VOICE_IDS);
+  const packBank = (b) => packBankFor(b, VOICE_IDS);
 
   const state = {
     bpm: 120,
@@ -458,7 +476,9 @@ export function mountJC808(root, studio) {
     solos: {},
     lane: 1,
     lanes: LANES.map(function (l) { return { synth: Object.assign({}, l.def), track: emptyTrack() }; }),
-    fx: { delay: 0.18, reverb: 0.2 }   // the sends are shared by both lanes
+    fx: { delay: 0.18, reverb: 0.2 },      // synth sends, shared by both lanes
+    drumFx: { echo: 0.45, reverb: 0.5 },   // drum sends — only painted steps use them
+    editMode: "hit"                        // what a click on the grid paints: hit | echo | verb
   };
   // the synth panel, the keyboard and the recorder always mean the selected lane
   Object.defineProperty(state, "synth", { get: function () { return state.lanes[state.lane].synth; } });
@@ -534,11 +554,35 @@ export function mountJC808(root, studio) {
   let ctx = null;
   let engine = null;
   const LOOKAHEAD = 25;      // ms between scheduler ticks
-  const HORIZON = 0.12;      // seconds scheduled ahead
+  const HORIZON = 0.28;      // seconds scheduled ahead — a long frame or a GC
+                             // pause on the main thread must not starve the beat
+
+  // The clock ticks in a Worker: its timer is not throttled when the tab is
+  // in the background, and it keeps firing on time while the main thread is
+  // busy drawing the room. Falls back to a plain interval if workers are out.
+  function makeTicker(fn, ms) {
+    let worker = null, timer = null;
+    try {
+      const src = "let id=null;onmessage=function(e){clearInterval(id);id=null;if(e.data==='start')id=setInterval(function(){postMessage(0);}," + ms + ");};";
+      worker = new Worker(URL.createObjectURL(new Blob([src], { type: "text/javascript" })));
+      worker.onmessage = function () { fn(); };
+    } catch (e) { worker = null; }
+    return {
+      start: function () {
+        if (worker) worker.postMessage("start");
+        else { clearInterval(timer); timer = setInterval(fn, ms); }
+      },
+      stop: function () {
+        if (worker) worker.postMessage("stop");
+        clearInterval(timer);
+        timer = null;
+      }
+    };
+  }
+  const ticker = makeTicker(function () { if (state.playing) scheduler(); }, LOOKAHEAD);
 
   let currentStep = 0;
   let nextStepTime = 0;
-  let timerId = null;
   let playBank = 0;
   const drawQueue = [];
 
@@ -554,7 +598,9 @@ export function mountJC808(root, studio) {
     if (step >= pat.length) return;
     const vel = pat.accent[step] ? 1 + state.accentAmt : 0.82;
     VOICE_IDS.forEach(function (id) {
-      if (pat.steps[id][step] && audible(id)) trigger(E, id, time, vel);
+      if (pat.steps[id][step] && audible(id)) {
+        trigger(E, id, time, vel, { echo: pat.echo[id][step], verb: pat.verb[id][step] });
+      }
     });
   }
 
@@ -584,7 +630,6 @@ export function mountJC808(root, studio) {
       }
       nextStepTime += stepDur();
     }
-    timerId = setTimeout(scheduler, LOOKAHEAD);
   }
 
   // countIn: start one bar early so a take can begin on bar 1 (Rec from stopped)
@@ -601,6 +646,7 @@ export function mountJC808(root, studio) {
     state.lanes.forEach(function (l) { l.track.notes.forEach(function (n) { delete n._abs; }); });
     rollDirty = true;
     scheduler();
+    ticker.start();
     const b = $("#jc-playBtn");
     b.classList.add("playing");
     b.setAttribute("aria-label", "Stop");
@@ -610,8 +656,7 @@ export function mountJC808(root, studio) {
   function stop() {
     if (recording) setRecording(false);   // closes held notes at the stop point
     state.playing = false;
-    clearTimeout(timerId);
-    timerId = null;
+    ticker.stop();
     drawQueue.length = 0;
     clearPlayhead();
     silenceTrack();
@@ -645,8 +690,10 @@ export function mountJC808(root, studio) {
     engine.master.gain.value = state.volume;
     engine.drive.curve = driveCurve(state.drive);
     engine.lanes.forEach(function (g, i) { g.gain.value = state.lanes[i].synth.level; });
-    engine.delayMix.gain.value = state.fx.delay;
-    engine.reverbMix.gain.value = state.fx.reverb;
+    engine.synthDelaySend.gain.value = state.fx.delay;
+    engine.synthVerbSend.gain.value = state.fx.reverb;
+    engine.drumEchoSend.gain.value = state.drumFx.echo;
+    engine.drumVerbSend.gain.value = state.drumFx.reverb;
     engine.delay.delayTime.value = clamp((60 / state.bpm) * 0.75, 0.02, 1.9);
   }
 
@@ -986,28 +1033,35 @@ export function mountJC808(root, studio) {
   const ROLL_TOP = 14;           // CSS px for the bar-number strip
   const BLACK_SEMIS = [1, 3, 6, 8, 10];
 
+  let rollsNeedSize = true;    // set by the ResizeObserver, handled on the next frame
   function sizeRolls() {
+    rollsNeedSize = false;
     const r = window.devicePixelRatio || 1;
     laneUI.forEach(function (u) {
       const rect = u.canvas.getBoundingClientRect();
-      u.canvas.width = Math.max(1, rect.width * r);
-      u.canvas.height = Math.max(1, rect.height * r);
+      u.canvas.width = Math.max(1, Math.round(rect.width * r));
+      u.canvas.height = Math.max(1, Math.round(rect.height * r));
       u.ctx = u.canvas.getContext("2d");
+      u.layer.width = u.canvas.width;
+      u.layer.height = u.canvas.height;
+      u.layerDirty = true;
     });
     rollDirty = true;
   }
 
-  function drawRoll(li) {
+  // The grid and the notes only change when a note is added, removed or the
+  // lane is edited, so they are drawn once into an offscreen layer; every
+  // frame while playing is then a single blit plus the playhead.
+  function drawRollStatic(li) {
     const u = laneUI[li];
-    if (!u || !u.ctx) return;
     const T = state.lanes[li].track;
     const selected = li === state.lane;
     const color = LANES[li].color;
     const steps = trackSteps(T);
     const grid = GRIDS[T.quantize] || 0;
-    const w = u.canvas.width, h = u.canvas.height;
+    const w = u.layer.width, h = u.layer.height;
     const r = window.devicePixelRatio || 1;
-    const g = u.ctx;
+    const g = u.layer.getContext("2d");
     const range = pitchRange(T.notes.filter(function (n) { return n.s < steps; }));
     u.rows = range;
     const rows = range.hi - range.lo + 1;
@@ -1066,6 +1120,31 @@ export function mountJC808(root, studio) {
       g.fillRect(x, y, Math.min(1.5 * r, len), noteH);
     });
     g.globalAlpha = 1;
+    u.layerDirty = false;
+  }
+
+  function drawRoll(li) {
+    const u = laneUI[li];
+    if (!u || !u.ctx) return;
+    if (u.layerDirty) drawRollStatic(li);
+    const T = state.lanes[li].track;
+    const selected = li === state.lane;
+    const steps = trackSteps(T);
+    const range = u.rows;
+    const w = u.canvas.width, h = u.canvas.height;
+    const r = window.devicePixelRatio || 1;
+    const g = u.ctx;
+    const rows = range.hi - range.lo + 1;
+    const top = ROLL_TOP * r;
+    const rowH = (h - top) / rows;
+    const xOf = function (pos) { return (pos / steps) * w; };
+    const yOf = function (midi) { return top + (range.hi - midi) * rowH; };
+    const noteH = Math.max(2 * r, rowH - 1.5 * r);
+    const bar = function (x, y, len) {
+      g.fillRect(x, y, Math.min(len, w - x), noteH);
+      if (x + len > w) g.fillRect(0, y, x + len - w, noteH);
+    };
+    g.drawImage(u.layer, 0, 0);
 
     // keys held right now while recording, growing from where they were pressed
     if (selected && recOpen.size && state.playing) {
@@ -1260,10 +1339,15 @@ export function mountJC808(root, studio) {
       lane.appendChild(head);
       lane.appendChild(canvas);
       host.appendChild(lane);
-      laneUI.push({ el: lane, canvas: canvas, ctx: null, barsSel: barsSel, quantSel: quantSel, mute: mute, count: count, rows: { lo: 55, hi: 84 } });
+      laneUI.push({ el: lane, canvas: canvas, ctx: null, layer: document.createElement("canvas"), layerDirty: true, barsSel: barsSel, quantSel: quantSel, mute: mute, count: count, rows: { lo: 55, hi: 84 } });
     });
     sizeRolls();
-    window.addEventListener("resize", sizeRolls);
+    // the panel animates open after the rolls are first sized, so re-size
+    // when the canvases actually change — without polling layout every frame
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(function () { rollsNeedSize = true; });
+      laneUI.forEach(function (u) { ro.observe(u.canvas); });
+    } else window.addEventListener("resize", function () { rollsNeedSize = true; });
     syncTrackUI();
   }
 
@@ -1290,21 +1374,16 @@ export function mountJC808(root, studio) {
   }
 
   /* ============================================================
-     6. UI — knobs
+     6. UI — faders
+     Every continuous control is a vertical fader, low at the bottom and
+     high at the top like a channel fader on a mixing desk. Grab the cap
+     (or click anywhere on the track) and drag; the fader only moves while
+     the button is held. Shift-drag is fine, wheel nudges, arrows step,
+     double-click resets. Returns the same wrap/setValue API as before, so
+     the voice drawers, the transport and the synth modules are unchanged.
      ============================================================ */
 
-  function polar(cx, cy, r, deg) {
-    const a = ((deg - 90) * Math.PI) / 180;
-    return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-  }
-  function arcPath(cx, cy, r, a0, a1) {
-    const [x1, y1] = polar(cx, cy, r, a0);
-    const [x2, y2] = polar(cx, cy, r, a1);
-    const large = Math.abs(a1 - a0) > 180 ? 1 : 0;
-    return "M" + x1 + " " + y1 + " A" + r + " " + r + " 0 " + large + " 1 " + x2 + " " + y2;
-  }
-
-  const A0 = -135, A1 = 135;
+  const CAP_H = 14;   // CSS px, must match .fader-cap in jc808.css
 
   function Knob(opts) {
     const min = opts.min != null ? opts.min : 0;
@@ -1312,37 +1391,33 @@ export function mountJC808(root, studio) {
     const step = opts.step || (max - min) / 100;
     let value = clamp(opts.value, min, max);
 
-    const wrap = el("div", "knob-wrap");
-    const btn = el("button", "knob");
+    const wrap = el("div", "knob-wrap fader-wrap");
+    const read = el("div", "knob-value");
+    const btn = el("button", "fader");
     btn.type = "button";
     btn.setAttribute("role", "slider");
     btn.setAttribute("aria-label", opts.label);
-    btn.setAttribute("tabindex", "0");
-    btn.innerHTML =
-      '<svg viewBox="0 0 48 48" aria-hidden="true">' +
-      '<path class="arc-bg" d="' + arcPath(24, 24, 20, A0, A1) + '"></path>' +
-      '<path class="arc" d=""></path>' +
-      '<circle class="dial" cx="24" cy="24" r="14"></circle>' +
-      '<line class="pointer" x1="24" y1="24" x2="24" y2="12"></line>' +
-      "</svg>";
+    btn.setAttribute("aria-orientation", "vertical");
+    const track = el("span", "fader-track");
+    const fill = el("span", "fader-fill");
+    const cap = el("span", "fader-cap");
+    track.appendChild(fill);
+    track.appendChild(cap);
+    btn.appendChild(track);
     const label = el("div", "knob-label", opts.label);
-    const read = el("div", "knob-value");
+    wrap.appendChild(read);
     wrap.appendChild(btn);
     wrap.appendChild(label);
-    wrap.appendChild(read);
-
-    const arc = $(".arc", btn);
-    const pointer = $(".pointer", btn);
 
     function render() {
       const norm = (value - min) / (max - min);
-      const ang = lerp(A0, A1, norm);
-      arc.setAttribute("d", arcPath(24, 24, 20, A0, Math.max(A0 + 0.01, ang)));
-      pointer.setAttribute("transform", "rotate(" + ang + " 24 24)");
+      fill.style.height = (norm * 100).toFixed(2) + "%";
+      cap.style.bottom = "calc(" + (norm * 100).toFixed(2) + "% - " + (norm * CAP_H).toFixed(2) + "px)";
       read.textContent = opts.format ? opts.format(value) : Math.round(value * 100) / 100;
       btn.setAttribute("aria-valuenow", String(Math.round(value * 1000) / 1000));
       btn.setAttribute("aria-valuemin", String(min));
       btn.setAttribute("aria-valuemax", String(max));
+      btn.setAttribute("aria-valuetext", String(read.textContent));
     }
 
     function set(v, fire) {
@@ -1353,29 +1428,60 @@ export function mountJC808(root, studio) {
       if (opts.onChange) opts.onChange(value);
     }
 
-    let dragging = false, lastY = 0, acc = 0;
-    btn.addEventListener("pointerdown", function (e) {
-      dragging = true;
-      lastY = e.clientY;
-      acc = value;
-      btn.setPointerCapture(e.pointerId);
-      e.preventDefault();
-    });
-    btn.addEventListener("pointermove", function (e) {
-      if (!dragging) return;
-      const dy = lastY - e.clientY;
-      lastY = e.clientY;
-      const scale = (e.shiftKey ? 0.25 : 1) * (max - min) / 180;
-      acc = clamp(acc + dy * scale, min, max);
-      set(acc);
-    });
-    function release(e) {
-      if (!dragging) return;
-      dragging = false;
-      try { btn.releasePointerCapture(e.pointerId); } catch (err) {}
+    // where the cap's centre would have to be for the pointer to hold it
+    function valueAt(clientY) {
+      const r = track.getBoundingClientRect();
+      const travel = Math.max(1, r.height - CAP_H);
+      const norm = 1 - (clientY - r.top - CAP_H / 2) / travel;
+      return min + clamp(norm, 0, 1) * (max - min);
     }
-    btn.addEventListener("pointerup", release);
-    btn.addEventListener("pointercancel", release);
+
+    // The drag is tracked on the window, so the fader only moves while the
+    // button is actually held: leaving the fader (or the panel, or the
+    // browser window) and letting go always ends the drag, and a mouse that
+    // comes back with no button down never moves it.
+    let dragging = null, lastY = 0, fineAcc = 0;
+    function move(e) {
+      if (dragging === null || e.pointerId !== dragging) return;
+      if (e.pointerType === "mouse" && e.buttons === 0) { release(e); return; }
+      if (e.shiftKey) {
+        const r = track.getBoundingClientRect();
+        fineAcc = clamp(fineAcc + ((lastY - e.clientY) / Math.max(1, r.height - CAP_H)) * 0.25 * (max - min), min, max);
+        set(fineAcc);
+      } else {
+        set(valueAt(e.clientY));
+        fineAcc = value;
+      }
+      lastY = e.clientY;
+    }
+    function release(e) {
+      if (dragging === null) return;
+      if (e && e.pointerId != null && e.pointerId !== dragging) return;
+      try { btn.releasePointerCapture(dragging); } catch (err) {}
+      dragging = null;
+      btn.classList.remove("dragging");
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", release, true);
+      window.removeEventListener("pointercancel", release, true);
+      window.removeEventListener("blur", release);
+    }
+    btn.addEventListener("pointerdown", function (e) {
+      if (e.button != null && e.button !== 0) return;
+      release();
+      dragging = e.pointerId;
+      lastY = e.clientY;
+      btn.classList.add("dragging");
+      try { btn.setPointerCapture(e.pointerId); } catch (err) {}
+      window.addEventListener("pointermove", move, true);
+      window.addEventListener("pointerup", release, true);
+      window.addEventListener("pointercancel", release, true);
+      window.addEventListener("blur", release);
+      btn.focus({ preventScroll: true });
+      e.preventDefault();
+      // a click on the track jumps the cap there; shift keeps it where it is
+      if (!e.shiftKey) set(valueAt(e.clientY));
+      fineAcc = value;
+    });
     btn.addEventListener("dblclick", function () { set(opts.reset ? opts.reset() : opts.value, "force"); });
     btn.addEventListener("wheel", function (e) {
       e.preventDefault();
@@ -1391,6 +1497,7 @@ export function mountJC808(root, studio) {
 
     render();
     wrap.setValue = function (v) { value = clamp(v, min, max); render(); };
+    wrap.getValue = function () { return value; };
     return wrap;
   }
 
@@ -1474,7 +1581,9 @@ export function mountJC808(root, studio) {
         s.style.color = v.color;
         s.setAttribute("aria-label", v.name + " step " + (i + 1));
         s.setAttribute("aria-pressed", "false");
-        s.addEventListener("click", function () { toggleStep(v.id, i); });
+        s.appendChild(el("i", "fx-e"));
+        s.appendChild(el("i", "fx-r"));
+        s.addEventListener("click", function (e) { clickStep(v.id, i, e); });
         stepEls[v.id].push(s);
         row.appendChild(s);
       }
@@ -1555,13 +1664,39 @@ export function mountJC808(root, studio) {
     editSnapTimer = setTimeout(function () { editSnapTimer = null; }, 1200);
   }
 
+  // Hit mode toggles the hit. Echo / Reverb mode (or shift-click / alt-click
+  // in any mode) paints that effect onto the hit, switching the hit on if
+  // it was off; a second click takes the effect off again but keeps the hit.
+  function clickStep(id, i, e) {
+    const mode = e && e.shiftKey ? "echo" : e && e.altKey ? "verb" : state.editMode;
+    if (mode === "hit") return toggleStep(id, i);
+    snapshotDebounced("edit");
+    const pat = curBank();
+    const lane = pat[mode][id];
+    if (!pat.steps[id][i]) { pat.steps[id][i] = true; lane[i] = true; }
+    else lane[i] = !lane[i];
+    refreshGrid();
+    if (!state.playing) hitVoice(id, { echo: pat.echo[id][i], verb: pat.verb[id][i] });
+    save();
+  }
+
   function toggleStep(id, i) {
     snapshotDebounced("edit");
     const pat = curBank();
     pat.steps[id][i] = !pat.steps[id][i];
+    if (!pat.steps[id][i]) { pat.echo[id][i] = false; pat.verb[id][i] = false; }
     refreshGrid();
     if (!state.playing && pat.steps[id][i]) hitVoice(id);
     save();
+  }
+
+  function setEditMode(mode) {
+    state.editMode = mode;
+    const machine = $("#jc-machine");
+    machine.classList.toggle("mode-echo", mode === "echo");
+    machine.classList.toggle("mode-verb", mode === "verb");
+    const seg = $("#jc-editSeg");
+    if (seg) markSeg(seg, mode);
   }
 
   function refreshGrid() {
@@ -1573,6 +1708,8 @@ export function mountJC808(root, studio) {
         s.classList.toggle("on", on);
         s.setAttribute("aria-pressed", on ? "true" : "false");
         s.classList.toggle("past-length", i >= pat.length);
+        s.classList.toggle("has-echo", on && pat.echo[id][i]);
+        s.classList.toggle("has-verb", on && pat.verb[id][i]);
       });
     });
     accentEls.forEach(function (s, i) {
@@ -1592,9 +1729,9 @@ export function mountJC808(root, studio) {
     });
   }
 
-  function hitVoice(id) {
+  function hitVoice(id, fx) {
     ensureAudio();
-    trigger(engine, id, ctx.currentTime + 0.001, 1);
+    trigger(engine, id, ctx.currentTime + 0.001, 1, fx);
     const row = trackEls[id];
     if (row) {
       const t = row.querySelector(".track-trigger");
@@ -1612,9 +1749,9 @@ export function mountJC808(root, studio) {
     live.step = -1;
   }
   function paintPlayhead(step) {
-    live.step = step;
-    if (step === lastPlayhead) return;
+    if (step === lastPlayhead) { live.step = step; return; }
     clearPlayhead();
+    live.step = step;        // after clearPlayhead, which resets it — the 3D LEDs read this
     lastPlayhead = step;
     VOICE_IDS.forEach(function (id) {
       const s = stepEls[id][step];
@@ -1638,11 +1775,11 @@ export function mountJC808(root, studio) {
       if (ev.step >= 0) paintPlayhead(ev.step);
       if (ev.key != null) flashKey(ev.key, ev.hold ? ev.hold * 1000 : 0);
     });
+    if (!isActive()) return;          // nothing on screen: the 3D model has its own scope
     drawScope();
-    if (isActive() && (state.playing || rollDirty)) {
-      // the panel may still have been animating open when the rolls were sized
-      const r = window.devicePixelRatio || 1;
-      if (laneUI.some(function (u) { return Math.abs(u.canvas.clientWidth * r - u.canvas.width) > 1; })) sizeRolls();
+    if (rollsNeedSize) sizeRolls();
+    if (state.playing || rollDirty) {
+      if (rollDirty) laneUI.forEach(function (u) { u.layerDirty = true; });
       laneUI.forEach(function (_, i) { drawRoll(i); });
       if (rollDirty) updateLaneCounts();
       rollDirty = false;
@@ -1866,12 +2003,7 @@ export function mountJC808(root, studio) {
      10. PATTERNS / PRESETS
      ============================================================ */
 
-  function pat(str) {
-    // "x..." notation → boolean array of 16
-    const a = new Array(16).fill(false);
-    for (let i = 0; i < 16 && i < str.length; i++) a[i] = str[i] !== "." && str[i] !== " ";
-    return a;
-  }
+  const pat = unpackLane;   // "x..." notation → boolean array of 16
 
   const PRESETS = {
     "Four to the Floor": {
@@ -1963,13 +2095,15 @@ export function mountJC808(root, studio) {
     return {
       bpm: state.bpm, swing: state.swing, volume: state.volume, drive: state.drive,
       accentAmt: state.accentAmt, bank: state.bank, chain: state.chain,
-      banks: state.banks, voices: state.voices, mutes: state.mutes,
+      banks: state.banks.map(packBank), voices: state.voices, mutes: state.mutes,
       solos: state.solos,
       lane: state.lane,
       lanes: state.lanes.map(function (l) { return { synth: l.synth, track: serialiseTrack(l.track) }; }),
-      fx: state.fx
+      fx: state.fx,
+      drumFx: state.drumFx
     };
   }
+
 
   function loadPatch(dst, src) {
     if (!src) return;
@@ -1991,15 +2125,7 @@ export function mountJC808(root, studio) {
         if (data[k] != null) state[k] = data[k];
       });
       if (Array.isArray(data.banks) && data.banks.length === 4) {
-        state.banks = data.banks.map(function (b) {
-          const nb = emptyBank();
-          if (b && b.steps) VOICE_IDS.forEach(function (id) {
-            if (Array.isArray(b.steps[id])) nb.steps[id] = b.steps[id].slice(0, 16);
-          });
-          if (Array.isArray(b.accent)) nb.accent = b.accent.slice(0, 16);
-          if (b && b.length) nb.length = clamp(b.length | 0, 1, 16);
-          return nb;
-        });
+        state.banks = data.banks.map(function (b) { return normaliseBank(b, VOICE_IDS); });
       }
       if (data.voices) VOICE_IDS.forEach(function (id) {
         if (data.voices[id]) Object.assign(state.voices[id], data.voices[id]);
@@ -2021,6 +2147,10 @@ export function mountJC808(root, studio) {
       if (data.fx) {
         if (data.fx.delay != null) state.fx.delay = clamp(+data.fx.delay || 0, 0, 0.8);
         if (data.fx.reverb != null) state.fx.reverb = clamp(+data.fx.reverb || 0, 0, 0.8);
+      }
+      if (data.drumFx) {
+        if (data.drumFx.echo != null) state.drumFx.echo = clamp(+data.drumFx.echo || 0, 0, 1);
+        if (data.drumFx.reverb != null) state.drumFx.reverb = clamp(+data.drumFx.reverb || 0, 0, 1);
       }
       if (data.lane === 0 || data.lane === 1) state.lane = data.lane;
       return true;
@@ -2127,8 +2257,12 @@ export function mountJC808(root, studio) {
     E.master.gain.value = state.volume;
     E.drive.curve = driveCurve(state.drive);
     E.lanes.forEach(function (g, i) { g.gain.value = state.lanes[i].synth.level; });
-    E.delayMix.gain.value = state.fx.delay * 0.6;
-    E.reverbMix.gain.value = state.fx.reverb * 0.6;
+    E.synthDelaySend.gain.value = state.fx.delay;
+    E.synthVerbSend.gain.value = state.fx.reverb;
+    E.drumEchoSend.gain.value = state.drumFx.echo;
+    E.drumVerbSend.gain.value = state.drumFx.reverb;
+    E.delayReturn.gain.value = 0.6;
+    E.reverbReturn.gain.value = 0.6;
     E.delay.delayTime.value = clamp((60 / state.bpm) * 0.75, 0.02, 1.9);
 
     let t = 0.05, song = 0;
@@ -2256,6 +2390,28 @@ export function mountJC808(root, studio) {
     $("#jc-accentSlot").appendChild(Knob({
       label: "Accent", min: 0, max: 1, value: state.accentAmt, step: 0.01, format: pct,
       onChange: function (v) { state.accentAmt = v; save(); }
+    }));
+
+    // what a click on the grid paints, and how much echo / reverb a painted step gets
+    const editSeg = $("#jc-editSeg");
+    [["hit", "Hit"], ["echo", "Echo"], ["verb", "Reverb"]].forEach(function (m) {
+      const b = el("button", null, m[1]);
+      b.type = "button";
+      b.dataset.v = m[0];
+      b.title = m[0] === "hit" ? "Click a step to add or remove a hit"
+        : m[0] === "echo" ? "Click a step to send that hit to the echo (or shift-click in any mode)"
+        : "Click a step to send that hit to the reverb (or alt-click in any mode)";
+      b.addEventListener("click", function () { setEditMode(m[0]); });
+      editSeg.appendChild(b);
+    });
+    setEditMode(state.editMode);
+    $("#jc-echoSlot").appendChild(Knob({
+      label: "Echo", min: 0, max: 1, value: state.drumFx.echo, step: 0.01, format: pct,
+      onChange: function (v) { state.drumFx.echo = v; applyMaster(); save(); }
+    }));
+    $("#jc-verbSlot").appendChild(Knob({
+      label: "Reverb", min: 0, max: 1, value: state.drumFx.reverb, step: 0.01, format: pct,
+      onChange: function (v) { state.drumFx.reverb = v; applyMaster(); save(); }
     }));
 
     // banks
@@ -2503,7 +2659,7 @@ export function mountJC808(root, studio) {
     $("#jc-tapeBtn").addEventListener("click", renderToTape);
 
     return {
-      open: function () { sizeScope(); sizeRolls(); ensureAudio(); },
+      open: function () { sizeScope(); rollsNeedSize = true; rollDirty = true; ensureAudio(); },
       close: function () { downKeys.clear(); if (!state.synth.latch) allNotesOff(); },
       togglePlay: togglePlay,
       get playing() { return state.playing; }

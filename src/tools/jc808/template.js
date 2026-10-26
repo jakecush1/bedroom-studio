@@ -65,11 +65,21 @@ export const TEMPLATE = `
   </section>
 
   <section class="panel">
-    <div class="panel-head">
+    <div class="panel-head rhythm-head">
       <h2 class="panel-title">Rhythm Section</h2>
-      <span class="panel-title" style="letter-spacing:.1em;text-transform:none;">
-        Click steps to build a pattern · <kbd>▾</kbd> opens level / tune / decay
-      </span>
+      <div class="rhythm-tools">
+        <div class="field">
+          <span>Click paints</span>
+          <div class="seg" id="jc-editSeg" title="What a click on a step does"></div>
+        </div>
+        <div class="fx-sends" title="How much a painted step sends to the echo and the reverb">
+          <div id="jc-echoSlot"></div>
+          <div id="jc-verbSlot"></div>
+        </div>
+        <span class="panel-title hint-text">
+          Steps marked <i class="fx-key fx-key-e"></i> echo · <i class="fx-key fx-key-r"></i> reverb · shift-click / alt-click paints from any mode · <kbd>▾</kbd> opens level / tune / decay
+        </span>
+      </div>
     </div>
     <div class="machine-scroll">
       <div class="machine" id="jc-machine"></div>
@@ -108,6 +118,9 @@ export const TEMPLATE = `
         <button class="btn" id="jc-panicBtn" type="button">Panic</button>
       </div>
     </div>
+    <div class="keyboard-wrap">
+      <div class="keyboard" id="jc-keyboard"></div>
+    </div>
     <div class="synth-grid">
       <div class="module">
         <h3>Oscillator</h3>
@@ -143,9 +156,6 @@ export const TEMPLATE = `
         <h3>Output</h3>
         <canvas class="scope" id="jc-scope"></canvas>
       </div>
-    </div>
-    <div class="keyboard-wrap">
-      <div class="keyboard" id="jc-keyboard"></div>
     </div>
   </section>
 
@@ -186,10 +196,11 @@ export const TEMPLATE = `
         </dl>
       </div>
       <div>
-        <h4>Knobs</h4>
+        <h4>Faders</h4>
         <dl>
-          <dt>Drag / wheel</dt><dd>Adjust</dd>
+          <dt>Click / drag</dt><dd>Low at the bottom, high at the top — moves only while the button is held</dd>
           <dt>Shift + drag</dt><dd>Fine</dd>
+          <dt>Wheel</dt><dd>Nudge</dd>
           <dt>Double-click</dt><dd>Reset to default</dd>
           <dt>Arrow keys</dt><dd>Adjust when focused</dd>
         </dl>
@@ -198,6 +209,7 @@ export const TEMPLATE = `
         <h4>Notes</h4>
         <dl>
           <dt>Accent</dt><dd>The bottom lane lifts every hit on that step</dd>
+          <dt>Echo / Reverb</dt><dd>Off by default. Set “Click paints” to Echo or Reverb and click a step to send that hit to the effect (shift-click / alt-click does the same from any mode); the Echo and Reverb faders set how much. Each voice and step is separate, so a reverb on the snare leaves the kick dry</dd>
           <dt>Arp</dt><dd>Runs off the sequencer clock — press play, then hold keys</dd>
           <dt>Latch</dt><dd>Each key toggles in and out of the chord; Panic clears it</dd>
           <dt>Lanes</dt><dd>Bass and Lead each have their own patch, loop length and quantize; a bar is 16 steps, so a 2-bar bass can loop under a 16-bar lead</dd>

@@ -50,6 +50,14 @@ export class World extends Emitter {
     renderer.toneMappingExposure = this.baseExposure;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
+    // nothing that casts a shadow moves once the door is open, so the two
+    // shadow maps are rendered once instead of twice per frame
+    renderer.shadowMap.autoUpdate = false;
+    renderer.shadowMap.needsUpdate = true;
+    this._shadowsUntil = Infinity;   // keep refreshing until enter() ends
+    this._backdrop = false;          // cheap rendering while a panel covers the room
+    this._backdropAt = 0;
+    this._frameNo = 0;
     this.pixelRatio = Math.min(window.devicePixelRatio || 1, 1.75);
     renderer.setPixelRatio(this.pixelRatio);
     container.appendChild(renderer.domElement);
@@ -131,8 +139,26 @@ export class World extends Emitter {
   setQuality(q) {
     this.quality = q;
     this.pixelRatio = q >= 1 ? Math.min(window.devicePixelRatio || 1, 1.75) : q >= 0.75 ? 1 : 0.75;
-    this.renderer.setPixelRatio(this.pixelRatio);
+    this._applyPixelRatio();
+  }
+
+  _applyPixelRatio() {
+    const pr = this._backdrop ? Math.min(this.pixelRatio, 1) * 0.8 : this.pixelRatio;
+    if (Math.abs(this.renderer.getPixelRatio() - pr) < 1e-3) return;
+    this.renderer.setPixelRatio(pr);
     this.resize();
+  }
+
+  /**
+   * While a machine panel is open the room is a dimmed backdrop, so it is
+   * drawn cheaply: no ambient occlusion, fewer pixels, every other frame.
+   * That keeps the main thread free for the panel and the sequencer.
+   */
+  _setBackdrop(on) {
+    if (this._backdrop === on) return;
+    this._backdrop = on;
+    this.post.gtao.enabled = !on;
+    this._applyPixelRatio();
   }
 
   /* ---------------- input ---------------- */
@@ -207,18 +233,20 @@ export class World extends Emitter {
       this.cam.hfov = HOME.hfov;
       this._applyFov();
       this.inputEnabled = true;
+      this._shadowsUntil = performance.now() + 300;
       return;
     }
     const t0 = performance.now();
     await new Promise((res) => {
       const step = () => {
-        const k = Math.min(1, (performance.now() - t0) / 1300);
+        const k = Math.min(1, (performance.now() - t0) / 900);
         door.rotation.y = -1.62 * ease(k);
         k < 1 ? requestAnimationFrame(step) : res();
       };
       step();
     });
-    await this._tweenTo(HOME, 2.6);
+    this._shadowsUntil = performance.now() + 300;   // the door has settled
+    await this._tweenTo(HOME, 1.8);
     this.inputEnabled = true;
   }
 
@@ -228,13 +256,13 @@ export class World extends Emitter {
     this.focused = m;
     this._setHover(null);
     this.highlight(null);
-    await this._tweenTo(m.focusPose(), 1.15, shift);
+    await this._tweenTo(m.focusPose(), 0.85, shift);
     return m;
   }
 
   async unfocus() {
     this.focused = null;
-    await this._tweenTo(HOME, 1.05, 0);
+    await this._tweenTo(HOME, 0.8, 0);
   }
 
   /* ---------------- loop ---------------- */
@@ -243,6 +271,21 @@ export class World extends Emitter {
     this.timer.update();
     const dt = Math.min(0.05, this.timer.getDelta());
     const t = this.timer.getElapsed();
+    this._frameNo++;
+
+    // backdrop mode follows the panel: on a beat after the panel has unfolded
+    // (so the render targets are not reallocated mid-animation), off at once
+    const now = performance.now();
+    if (this.studio.panelOpen) {
+      if (!this._backdrop) {
+        if (!this._backdropAt) this._backdropAt = now + 500;
+        else if (now >= this._backdropAt) this._setBackdrop(true);
+      }
+    } else {
+      this._backdropAt = 0;
+      if (this._backdrop) this._setBackdrop(false);
+    }
+    const skip = this._backdrop && !this.tween && (this._frameNo & 1) === 1;
 
     if (this.tween) {
       const tw = this.tween;
@@ -296,11 +339,14 @@ export class World extends Emitter {
       this.focusLight.target.updateMatrixWorld();
     }
 
+    if (skip) return;   // the previous frame stays on screen behind the panel
+
     const ctx = { bands: this.studio.audio.ctx ? this.studio.audio.bands() : [0, 0, 0] };
     for (const fn of this.animated) fn(t, dt, ctx);
     for (const m of this.machines) if (m.update) m.update(dt, t);
     this.fx.update(dt, t);
 
+    this.renderer.shadowMap.needsUpdate = now < this._shadowsUntil;
     this.post.lofi.uniforms.uFocus.value += ((this.studio.panelOpen ? 1 : 0) - this.post.lofi.uniforms.uFocus.value) * Math.min(1, dt * 4);
     if (this.debugNoPost) this.renderer.render(this.scene, this.camera);
     else this.post.render(t);

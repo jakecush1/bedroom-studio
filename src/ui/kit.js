@@ -92,36 +92,34 @@ export function select(options, value, onChange) {
   return s;
 }
 
-/* ---------------- knob (same feel as the JC-808's) ---------------- */
-const A0 = -135, A1 = 135;
-function polar(cx, cy, r, deg) {
-  const a = ((deg - 90) * Math.PI) / 180;
-  return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-}
-function arcPath(cx, cy, r, a0, a1) {
-  const [x1, y1] = polar(cx, cy, r, a0);
-  const [x2, y2] = polar(cx, cy, r, a1);
-  return `M${x1} ${y1} A${r} ${r} 0 ${Math.abs(a1 - a0) > 180 ? 1 : 0} 1 ${x2} ${y2}`;
-}
+/* ---------------- fader (same feel as the JC-808's) ----------------
+   A vertical fader, low at the bottom and high at the top like a channel
+   fader on a mixing desk. Click anywhere on the track to jump the cap there
+   and drag; it only moves while the button is held. Shift-drag is fine,
+   the wheel nudges, arrow keys step, double-click resets. */
+const CAP_H = 14; // CSS px, must match .k-knob .fader-cap in base.css
 
 export function knob({ label, min = 0, max = 1, value = 0, step, format, onChange }) {
   step = step || (max - min) / 100;
   let v = clamp(value, min, max);
-  const wrap = el("div", "k-knob");
-  const btn = el("button");
+  const wrap = el("div", "k-knob k-fader");
+  const out = el("output");
+  const btn = el("button", "fader");
   btn.type = "button";
   btn.setAttribute("role", "slider");
   btn.setAttribute("aria-label", label);
-  btn.innerHTML = `<svg viewBox="0 0 48 48" aria-hidden="true"><path class="arc-bg" d="${arcPath(24, 24, 20, A0, A1)}"></path><path class="arc" d=""></path><circle class="dial" cx="24" cy="24" r="14"></circle><line class="pointer" x1="24" y1="24" x2="24" y2="12"></line></svg>`;
+  btn.setAttribute("aria-orientation", "vertical");
+  const track = el("span", "fader-track");
+  const fill = el("span", "fader-fill");
+  const cap = el("span", "fader-cap");
+  track.append(fill, cap);
+  btn.appendChild(track);
   const lab = el("label", null, label);
-  const out = el("output");
-  wrap.append(btn, lab, out);
-  const arc = btn.querySelector(".arc"), ptr = btn.querySelector(".pointer");
+  wrap.append(out, btn, lab);
   const render = () => {
     const norm = (v - min) / (max - min);
-    const ang = A0 + (A1 - A0) * norm;
-    arc.setAttribute("d", arcPath(24, 24, 20, A0, Math.max(A0 + 0.01, ang)));
-    ptr.setAttribute("transform", `rotate(${ang} 24 24)`);
+    fill.style.height = `${(norm * 100).toFixed(2)}%`;
+    cap.style.bottom = `calc(${(norm * 100).toFixed(2)}% - ${(norm * CAP_H).toFixed(2)}px)`;
     out.textContent = format ? format(v) : String(Math.round(v * 100) / 100);
     btn.setAttribute("aria-valuenow", String(v));
     btn.setAttribute("aria-valuemin", String(min));
@@ -135,27 +133,55 @@ export function knob({ label, min = 0, max = 1, value = 0, step, format, onChang
     render();
     if (fire && onChange) onChange(v);
   };
-  let drag = false, lastY = 0, acc = 0;
-  btn.addEventListener("pointerdown", (e) => {
-    drag = true;
-    lastY = e.clientY;
-    acc = v;
-    btn.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  });
-  btn.addEventListener("pointermove", (e) => {
-    if (!drag) return;
-    const dy = lastY - e.clientY;
-    lastY = e.clientY;
-    acc = clamp(acc + (dy * (e.shiftKey ? 0.25 : 1) * (max - min)) / 180, min, max);
-    set(acc);
-  });
-  const up = (e) => {
-    drag = false;
-    try { btn.releasePointerCapture(e.pointerId); } catch (err) { /* not captured */ }
+  const valueAt = (clientY) => {
+    const r = track.getBoundingClientRect();
+    const norm = 1 - (clientY - r.top - CAP_H / 2) / Math.max(1, r.height - CAP_H);
+    return min + clamp(norm, 0, 1) * (max - min);
   };
-  btn.addEventListener("pointerup", up);
-  btn.addEventListener("pointercancel", up);
+  // The drag lives on the window, not the button: the fader only moves while
+  // the button is held, and it lets go the moment the pointer is released
+  // anywhere (even outside the panel or the browser window).
+  let drag = null, lastY = 0, fineAcc = 0;
+  const move = (e) => {
+    if (drag === null || e.pointerId !== drag) return;
+    if (e.pointerType === "mouse" && e.buttons === 0) return end(e);
+    if (e.shiftKey) {
+      const r = track.getBoundingClientRect();
+      fineAcc = clamp(fineAcc + ((lastY - e.clientY) / Math.max(1, r.height - CAP_H)) * 0.25 * (max - min), min, max);
+      set(fineAcc);
+    } else {
+      set(valueAt(e.clientY));
+      fineAcc = v;
+    }
+    lastY = e.clientY;
+  };
+  const end = (e) => {
+    if (drag === null) return;
+    if (e && e.pointerId != null && e.pointerId !== drag) return;
+    try { btn.releasePointerCapture(drag); } catch (err) { /* not captured */ }
+    drag = null;
+    btn.classList.remove("dragging");
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", end, true);
+    window.removeEventListener("pointercancel", end, true);
+    window.removeEventListener("blur", end);
+  };
+  btn.addEventListener("pointerdown", (e) => {
+    if (e.button != null && e.button !== 0) return;
+    end();
+    drag = e.pointerId;
+    lastY = e.clientY;
+    btn.classList.add("dragging");
+    try { btn.setPointerCapture(e.pointerId); } catch (err) { /* capture is a bonus, not a requirement */ }
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", end, true);
+    window.addEventListener("pointercancel", end, true);
+    window.addEventListener("blur", end);
+    btn.focus({ preventScroll: true });
+    e.preventDefault();
+    if (!e.shiftKey) set(valueAt(e.clientY));
+    fineAcc = v;
+  });
   btn.addEventListener("dblclick", () => set(value));
   btn.addEventListener("wheel", (e) => { e.preventDefault(); set(v + (e.deltaY < 0 ? 1 : -1) * step * (e.shiftKey ? 1 : 4)); }, { passive: false });
   btn.addEventListener("keydown", (e) => {

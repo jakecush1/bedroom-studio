@@ -229,13 +229,14 @@ body.entering .hud-top, body.entering .dock, body.entering .hint { opacity: 0; p
 .k-select { max-width: 100%; }
 .k-range { width: 100%; accent-color: var(--accent); }
 
-.k-knob { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 62px; flex: none; }
-.k-knob button { width: 44px; height: 44px; border: 0; padding: 0; background: transparent; cursor: ns-resize; touch-action: none; }
-.k-knob svg { width: 100%; height: 100%; display: block; }
-.k-knob .arc-bg { stroke: #0a0a0f; stroke-width: 3.5; fill: none; stroke-linecap: round; }
-.k-knob .arc { stroke: var(--accent); stroke-width: 3.5; fill: none; stroke-linecap: round; }
-.k-knob .dial { fill: #2a2a33; stroke: #44444f; stroke-width: 1; }
-.k-knob .pointer { stroke: var(--cream); stroke-width: 2.4; stroke-linecap: round; }
+.k-knob { display: flex; flex-direction: column; align-items: center; gap: 5px; width: 54px; flex: none; }
+.k-knob .fader { position: relative; width: 40px; height: 92px; border: 0; padding: 0; background: transparent; cursor: ns-resize; touch-action: none; display: block; }
+.k-knob .fader-track { position: absolute; left: 50%; top: 4px; bottom: 4px; width: 7px; margin-left: -3.5px; border-radius: 4px; background: #0a0a0f; box-shadow: inset 0 1px 3px rgba(0,0,0,0.9), 0 1px 0 rgba(255,255,255,0.05); }
+.k-knob .fader-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0; border-radius: 4px; background: var(--accent); opacity: 0.85; }
+.k-knob .fader-cap { position: absolute; left: 50%; bottom: 0; width: 30px; height: 14px; margin-left: -15px; border-radius: 3px; background: linear-gradient(180deg, #4a4a56, #26262e); border: 1px solid #0a0a0f; box-shadow: 0 2px 5px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.14); }
+.k-knob .fader-cap::after { content: ""; position: absolute; left: 4px; right: 4px; top: 6px; height: 1px; background: var(--cream); opacity: 0.8; }
+.k-knob .fader:hover .fader-cap, .k-knob .fader.dragging .fader-cap { background: linear-gradient(180deg, #5a5a68, #30303a); }
+.k-knob .fader.dragging .fader-cap { border-color: var(--accent); }
 .k-knob label { font-size: 8px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); text-align: center; }
 .k-knob output { font-family: var(--mono); font-size: 10px; color: var(--cream-dim); }
 
