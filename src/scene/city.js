@@ -267,6 +267,7 @@ export function buildCity(scene) {
 
   /* a train crossing on an elevated line every so often */
   const train = new THREE.Group();
+  train.userData.dynamic = true;   // crosses the skyline
   const carMat = new THREE.MeshBasicMaterial({ color: 0x0a0a10, fog: false });
   const winMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.5, 1.4, 1.15), fog: false });
   for (let c = 0; c < 6; c++) {

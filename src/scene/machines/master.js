@@ -153,6 +153,7 @@ export function buildMaster(parent, studio) {
     plate.position.set(x, meterY, fz + 0.001);
     root.add(plate);
     const pivot = group({ parent: root, x, y: meterY - meterH * 0.62, z: fz + 0.004 });
+    pivot.userData.dynamic = true;   // the needle swings on this pivot
     const needle = new THREE.Mesh(new THREE.BoxGeometry(0.0011, meterH * 1.02, 0.0008), std(0x161210, { rough: 0.5 }));
     needle.position.y = meterH * 0.55;
     pivot.add(needle);
@@ -168,6 +169,7 @@ export function buildMaster(parent, studio) {
   const knobMat = std(0x111113, { rough: 0.35, metal: 0.3 });
   const knobs = [-0.176, -0.126, -0.076, -0.026].map((x) => {
     const k = group({ parent: root, x, y: 0.03, z: fz, rx: Math.PI / 2 });
+    k.userData.dynamic = true;   // turned by the panel's settings
     cyl(0.016, 0.018, 0.016, knobMat, { parent: k, y: 0.008, cast: true });
     cyl(0.012, 0.014, 0.006, std(0x2a2a2e, { rough: 0.3, metal: 0.6 }), { parent: k, y: 0.018 });
     box(0.003, 0.002, 0.012, std(0xf2eee4, { rough: 0.4 }), { parent: k, y: 0.0215, z: 0.005 });

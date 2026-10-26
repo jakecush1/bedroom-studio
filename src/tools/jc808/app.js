@@ -1284,6 +1284,7 @@ export function mountJC808(root, studio) {
       }
       u.barsSel.value = String(T.bars);
       u.quantSel.value = T.quantize;
+      u.vol.setValue(state.lanes[i].synth.level);
       u.mute.classList.toggle("on", T.mute);
       u.mute.textContent = T.mute ? "Muted" : "Mute";
       u.mute.setAttribute("aria-pressed", T.mute ? "true" : "false");
@@ -1309,6 +1310,22 @@ export function mountJC808(root, studio) {
       name.appendChild(el("span", null, l.name));
       name.addEventListener("click", function () { selectLane(i); });
       head.appendChild(name);
+
+      // the lane's level, right where its take is — the same value as the
+      // Level fader in the synth's Mix module for the selected lane
+      const vol = Knob({
+        label: "Volume", min: 0, max: 1, value: state.lanes[i].synth.level, step: 0.01, format: pct,
+        reset: function () { return l.def.level; },
+        onChange: function (v) {
+          state.lanes[i].synth.level = v;
+          applyMaster();
+          if (i === state.lane && synthKnobs.level) synthKnobs.level.setValue(v);
+          save();
+        }
+      });
+      vol.classList.add("sm");
+      vol.title = "Volume of the " + l.name + " lane";
+      head.appendChild(vol);
 
       const barsField = el("label", "field");
       barsField.appendChild(el("span", null, "Bars"));
@@ -1399,7 +1416,7 @@ export function mountJC808(root, studio) {
       lane.appendChild(head);
       lane.appendChild(canvas);
       host.appendChild(lane);
-      laneUI.push({ el: lane, canvas: canvas, ctx: null, layer: document.createElement("canvas"), layerDirty: true, barsSel: barsSel, quantSel: quantSel, mute: mute, count: count, rows: { lo: 55, hi: 84 } });
+      laneUI.push({ el: lane, canvas: canvas, ctx: null, layer: document.createElement("canvas"), layerDirty: true, barsSel: barsSel, quantSel: quantSel, mute: mute, vol: vol, count: count, rows: { lo: 55, hi: 84 } });
     });
     sizeRolls();
     // the panel animates open after the rolls are first sized, so re-size
@@ -2594,7 +2611,10 @@ export function mountJC808(root, studio) {
         });
       });
 
-    synthKnob("#jc-mixSlots", "level", { label: "Level", min: 0, max: 1, step: 0.01, format: pct, after: applyMaster });
+    synthKnob("#jc-mixSlots", "level", {
+      label: "Level", min: 0, max: 1, step: 0.01, format: pct,
+      after: function () { applyMaster(); if (laneUI[state.lane]) laneUI[state.lane].vol.setValue(state.synth.level); }
+    });
     $("#jc-mixSlots").appendChild(Knob({
       label: "Delay", min: 0, max: 0.8, value: state.fx.delay, step: 0.01, format: pct,
       onChange: function (v) { state.fx.delay = v; applyMaster(); save(); }

@@ -269,6 +269,7 @@ export function buildRoom(scene) {
   box(DOOR.x1 - DOOR.x0 + 0.12, 0.06, 0.18, frameMat, { parent: room, x: (DOOR.x0 + DOOR.x1) / 2, y: DOOR.h + 0.03, z: ROOM.z1 });
   const doorWood = std(0xffffff, { rough: 0.6, map: darkWoodTexture(17, [62, 44, 30]) });
   const doorPivot = group({ parent: room, x: DOOR.x1, z: ROOM.z1 - 0.02 });
+  doorPivot.userData.dynamic = true;   // swings open on the way in
   const doorW = DOOR.x1 - DOOR.x0;
   box(doorW, DOOR.h - 0.01, 0.04, doorWood, { parent: doorPivot, x: -doorW / 2, y: DOOR.h / 2, cast: true });
   for (const py of [0.55, 1.45]) box(doorW * 0.7, 0.55, 0.01, std(0x33251a, { rough: 0.7 }), { parent: doorPivot, x: -doorW / 2, y: py, z: -0.025 });

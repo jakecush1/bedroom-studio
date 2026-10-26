@@ -112,6 +112,7 @@ export function buildJC808(parent, studio) {
   for (let k = 0; k < 22; k++) {
     const key = box(WK - 0.0016, 0.016, 0.12, whiteMat, { parent: inst, x: kx0 + k * WK + WK / 2, y: 0.067, z: 0.13, cast: true });
     const midi = 48 + Math.floor(k / 7) * 12 + whiteSemis[k % 7];
+    key.userData.keep = true;   // pressed keys move, so they stay their own meshes
     keys.push({ mesh: key, midi, rest: 0.067 });
   }
   const blackAfter = [0, 1, 3, 4, 5];
@@ -121,6 +122,7 @@ export function buildJC808(parent, studio) {
       if (wi >= 21) continue;
       const key = box(0.012, 0.016, 0.075, blackMat, { parent: inst, x: kx0 + (wi + 1) * WK, y: 0.078, z: 0.105, cast: true });
       const midi = 48 + o * 12 + whiteSemis[a] + 1;
+      key.userData.keep = true;
       keys.push({ mesh: key, midi, rest: 0.078 });
     }
   }

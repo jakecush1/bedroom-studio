@@ -60,9 +60,9 @@ const SanitizeShader = {
       gl_FragColor = vec4(clamp(c.rgb, 0.0, 48.0), 1.0); }`
 };
 
-export function createPost(renderer, scene, camera) {
+export function createPost(renderer, scene, camera, { samples = 4 } = {}) {
   const size = renderer.getSize(new THREE.Vector2());
-  const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
+  const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples });
   const composer = new EffectComposer(renderer, target);
   composer.addPass(new RenderPass(scene, camera));
 

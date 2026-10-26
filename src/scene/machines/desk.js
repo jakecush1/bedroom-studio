@@ -27,6 +27,7 @@ function speaker(parent, x, z, ry) {
   box(0.19, 0.3, 0.23, body, { parent: g, y: 0.15, r: 0.01, cast: true });
   torus(0.058, 0.008, std(0x2a2a2e, { rough: 0.4, metal: 0.4 }), { parent: g, y: 0.1, z: 0.116 });
   const cone = lathe([[0.0, 0.0], [0.02, -0.004], [0.052, -0.016], [0.056, -0.012]], std(0x1d1d20, { rough: 0.7 }), { parent: g, y: 0.1, z: 0.118, rx: -Math.PI / 2, seg: 24 });
+  cone.userData.keep = true;   // pumps with the bass
   sphere(0.015, std(0x2a2a2e, { rough: 0.3, metal: 0.5 }), { parent: g, y: 0.1, z: 0.11 });
   torus(0.022, 0.005, std(0x2a2a2e, { metal: 0.5, rough: 0.3 }), { parent: g, y: 0.235, z: 0.116 });
   sphere(0.013, std(0x8a8a90, { metal: 0.8, rough: 0.2 }), { parent: g, y: 0.235, z: 0.11, thetaLength: Math.PI / 2, rx: Math.PI / 2 });

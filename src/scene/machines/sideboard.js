@@ -270,6 +270,7 @@ function buildTurntable(parent, studio) {
   box(0.45, 0.09, 0.36, walnut, { parent: root, y: 0.045, r: 0.01, cast: true });
   box(0.44, 0.006, 0.35, std(0x1a1a1c, { rough: 0.4, metal: 0.5 }), { parent: root, y: 0.093 });
   const platter = group({ parent: root, x: -0.05, y: 0.1, z: 0.0 });
+  platter.userData.dynamic = true;   // spins while the radio plays
   cyl(0.15, 0.15, 0.014, std(0x9a9aa0, { metal: 0.9, rough: 0.25 }), { parent: platter, y: 0.007, seg: 48 });
   const grooves = canvasTexture(512, 512, (g, w, h) => {
     g.fillStyle = "#0b0b0c";
@@ -303,6 +304,7 @@ function buildTurntable(parent, studio) {
   const armBase = group({ parent: root, x: 0.16, y: 0.096, z: -0.12 });
   cyl(0.025, 0.028, 0.02, std(0x2a2a2e, { metal: 0.8, rough: 0.3 }), { parent: armBase, y: 0.01 });
   const arm = group({ parent: armBase, y: 0.035 });
+  arm.userData.dynamic = true;       // swings onto the record
   box(0.007, 0.007, 0.23, std(0xc8c8cc, { metal: 1, rough: 0.2 }), { parent: arm, z: 0.1, rx: 0.03 });
   box(0.02, 0.012, 0.035, std(0x1a1a1a), { parent: arm, y: -0.006, z: 0.225 });
   cyl(0.014, 0.014, 0.03, std(0x2a2a2e, { metal: 0.8 }), { parent: arm, z: -0.03, rx: Math.PI / 2 });

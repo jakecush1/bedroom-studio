@@ -177,6 +177,9 @@
 .jc808 .lane { --lcolor: var(--accent); border: 1px solid var(--edge-soft); border-radius: var(--radius); background: var(--panel-lo); padding: 8px 10px 10px; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
 .jc808 .lane.selected { border-color: var(--lcolor); box-shadow: 0 0 16px -8px var(--lcolor); }
 .jc808 .lane-head { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 8px; }
+.jc808 .knob-wrap.sm { width: 46px; }
+.jc808 .knob-wrap.sm .fader { height: 62px; }
+.jc808 .lane-head .knob-wrap.sm { margin: 0 2px; }
 .jc808 .lane-name { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--edge); border-radius: var(--radius); padding: 8px 12px; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--cream-dim); font-weight: 600; min-width: 92px; }
 .jc808 .lane-name .swatch { background: var(--lcolor); width: 10px; height: 10px; }
 .jc808 .lane-name:hover { color: var(--cream); border-color: var(--lcolor); }

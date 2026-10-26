@@ -95,36 +95,63 @@ export function group(p = {}) {
 
 /**
  * Merge every static mesh under `root` that shares a material into one mesh,
- * keeping shadow flags. Cuts draw calls for clutter-heavy groups.
+ * keeping shadow flags. The room is built from thousands of primitives and
+ * the CPU cost of a frame is one draw call per mesh, so this is what makes
+ * it cheap to draw.
+ *
+ * Left alone: anything flagged `userData.keep` (a mesh that moves), every
+ * subtree under a group flagged `userData.dynamic` (a pivot that turns),
+ * instanced meshes, transparent or multi-material meshes, invisible pick
+ * boxes, custom shaders, and anything `opts.skip(obj)` says to.
  */
-export function mergeStatic(root) {
+export function mergeStatic(root, opts = {}) {
   root.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
   const buckets = new Map();
-  const remove = [];
-  root.traverse((o) => {
-    if (!o.isMesh || o.userData.keep || o.material.transparent || Array.isArray(o.material)) return;
-    const key = `${o.material.uuid}|${o.castShadow}|${o.receiveShadow}`;
-    if (!buckets.has(key)) buckets.set(key, { mat: o.material, cast: o.castShadow, receive: o.receiveShadow, geos: [] });
-    const g = o.geometry.clone();
-    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
-    // normalise attribute sets so geometries can merge
-    for (const name of Object.keys(g.attributes)) if (!["position", "normal", "uv"].includes(name)) g.deleteAttribute(name);
-    if (!g.attributes.uv) g.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
-    if (!g.index) g.setIndex([...Array(g.attributes.position.count).keys()]);
-    buckets.get(key).geos.push(g);
-    remove.push(o);
-  });
-  for (const o of remove) o.parent.remove(o);
+  const stats = { before: 0, after: 0, kept: 0 };
+  const visit = (o) => {
+    if (o !== root && (o.userData.dynamic || (opts.skip && opts.skip(o)))) { o.traverse((c) => { if (c.isMesh) stats.kept++; }); return; }
+    if (o.isMesh) {
+      stats.before++;
+      const m = o.material;
+      const mergeable = !o.isInstancedMesh && !o.isSkinnedMesh && !o.userData.keep && o.visible && !o.renderOrder
+        && m && !Array.isArray(m) && m.visible && !m.transparent && (m.isMeshStandardMaterial || m.isMeshBasicMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)
+        && !o.geometry.morphAttributes?.position;
+      if (!mergeable) { stats.kept++; }
+      else {
+        const key = `${m.uuid}|${o.castShadow}|${o.receiveShadow}`;
+        if (!buckets.has(key)) buckets.set(key, { mat: m, cast: o.castShadow, receive: o.receiveShadow, meshes: [] });
+        buckets.get(key).meshes.push(o);
+      }
+    }
+    for (const c of o.children) visit(c);
+  };
+  visit(root);
+  const tmp = new THREE.Matrix4();
   for (const b of buckets.values()) {
-    const merged = mergeGeometries(b.geos, false);
-    if (!merged) continue;
+    if (b.meshes.length < 2) { stats.kept += b.meshes.length; continue; }
+    const geos = b.meshes.map((o) => {
+      const g = o.geometry.clone();
+      // normalise attribute sets so geometries can merge
+      for (const name of Object.keys(g.attributes)) if (!["position", "normal", "uv"].includes(name)) g.deleteAttribute(name);
+      if (!g.attributes.normal) g.computeVertexNormals();
+      if (!g.attributes.uv) g.setAttribute("uv", new THREE.Float32BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+      if (!g.index) g.setIndex([...Array(g.attributes.position.count).keys()]);
+      g.clearGroups();
+      g.applyMatrix4(tmp.multiplyMatrices(inv, o.matrixWorld));
+      return g;
+    });
+    const merged = mergeGeometries(geos, false);
+    if (!merged) { stats.kept += b.meshes.length; continue; }   // leave the originals in place
+    for (const o of b.meshes) o.parent.remove(o);
     const m = new THREE.Mesh(merged, b.mat);
     m.castShadow = b.cast;
     m.receiveShadow = b.receive;
+    m.frustumCulled = false;   // one mesh spans the whole room; culling it would only cost a bounds check
     root.add(m);
+    stats.after++;
   }
-  return root;
+  return stats;
 }
 
 export const V3 = (x, y, z) => new THREE.Vector3(x, y, z);

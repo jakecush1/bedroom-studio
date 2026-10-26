@@ -12,6 +12,17 @@ import { buildConsoles } from "./machines/consoles.js";
 import { buildGuitar } from "./machines/guitar.js";
 import { buildMaster } from "./machines/master.js";
 import { buildVox } from "./machines/vox.js";
+import { mergeStatic } from "./kit3d.js";
+
+// ?merge=0 ?gtao=0 ?bloom=0 ?post=0 ?dpr=1 ?msaa=0|2|4 — for checking what a
+// feature costs on a given machine; nothing here changes the normal path
+function parseDebug() {
+  const q = new URLSearchParams(location.search);
+  const d = {};
+  for (const k of ["merge", "gtao", "bloom", "post", "dpr", "msaa"]) if (q.has(k)) d[k] = q.get(k);
+  return d;
+}
+const MAX_DPR = 1.5;   // Retina at 1.5 is still crisp under the film grain, for 44% fewer pixels than 2
 
 const HOME = {
   pos: new THREE.Vector3(0.02, 1.56, 2.28),
@@ -42,6 +53,7 @@ export class World extends Emitter {
     this.quality = 1;
     this._fpsAcc = 0;
     this._fpsFrames = 0;
+    this.debug = parseDebug();
 
     const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -55,10 +67,11 @@ export class World extends Emitter {
     renderer.shadowMap.autoUpdate = false;
     renderer.shadowMap.needsUpdate = true;
     this._shadowsUntil = Infinity;   // keep refreshing until enter() ends
+    this._shadowAt = 0;              // ...but no more often than every 80 ms (two full scene passes each time)
     this._backdrop = false;          // cheap rendering while a panel covers the room
     this._backdropAt = 0;
     this._frameNo = 0;
-    this.pixelRatio = Math.min(window.devicePixelRatio || 1, 1.75);
+    this.pixelRatio = Math.min(window.devicePixelRatio || 1, this.debug.dpr ? +this.debug.dpr : MAX_DPR);
     renderer.setPixelRatio(this.pixelRatio);
     container.appendChild(renderer.domElement);
     this.renderer = renderer;
@@ -98,13 +111,31 @@ export class World extends Emitter {
     this.hitboxes = this.machines.map((m) => m.hitbox);
     this.byId = new Map(this.machines.map((m) => [m.id, m]));
 
+    // A frame costs one draw call per mesh and the room is built from
+    // thousands of primitives, so fold the static ones into a few meshes:
+    // per machine (its hover outline must still cover all of it), then the
+    // rest of the room, then the city.
+    if (this.debug.merge !== "0") {
+      const roots = new Set(this.machines.map((m) => m.root));
+      const skip = (o) => roots.has(o);
+      const total = { before: 0, after: 0, kept: 0 };
+      const add = (s) => { total.before += s.before; total.after += s.after; total.kept += s.kept; };
+      for (const m of this.machines) add(mergeStatic(m.root, { skip }));
+      add(mergeStatic(room.room, { skip }));
+      add(mergeStatic(city.city));
+      this.mergeStats = total;
+    }
+
     // a soft key light that fades in on whichever machine you walk up to
     this.focusLight = new THREE.SpotLight(0xfff1de, 0, 5, 0.5, 0.95, 2);
     this.focusLight.castShadow = false;
     scene.add(this.focusLight, this.focusLight.target);
     this.focusLightLevel = 0;
 
-    this.post = createPost(renderer, scene, this.camera);
+    this.post = createPost(renderer, scene, this.camera, { samples: this.debug.msaa != null ? +this.debug.msaa : 4 });
+    if (this.debug.gtao === "0") this.post.gtao.enabled = false;
+    if (this.debug.bloom === "0") this.post.bloom.enabled = false;
+    if (this.debug.post === "0") this.debugNoPost = true;
     this.raycaster = new THREE.Raycaster();
 
     this._bindInput();
@@ -138,8 +169,75 @@ export class World extends Emitter {
 
   setQuality(q) {
     this.quality = q;
-    this.pixelRatio = q >= 1 ? Math.min(window.devicePixelRatio || 1, 1.75) : q >= 0.75 ? 1 : 0.75;
+    const full = Math.min(window.devicePixelRatio || 1, this.debug.dpr ? +this.debug.dpr : MAX_DPR);
+    this.pixelRatio = q >= 1 ? full : q >= 0.75 ? Math.min(full, 1) : Math.min(full, 0.75);
     this._applyPixelRatio();
+  }
+
+  /**
+   * Everything the first seconds in the room would otherwise stall on, done
+   * behind the gate: every shader compiled, every texture uploaded, a frame
+   * drawn from both camera poses (shadow maps, the post passes and the hover
+   * outline included), and a quick timing of this machine to pick the
+   * starting quality. onProgress gets 0..1.
+   */
+  async warmUp(onProgress = () => {}) {
+    const r = this.renderer;
+    const nextFrame = () => new Promise((res) => requestAnimationFrame(res));
+    await r.compileAsync(this.scene, this.camera);
+    onProgress(0.35);
+
+    const seen = new Set();
+    const init = (t) => { if (t && t.isTexture && !seen.has(t)) { seen.add(t); r.initTexture(t); } };
+    this.scene.traverse((o) => {
+      const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      for (const m of mats) {
+        for (const v of Object.values(m)) init(v);
+        if (m.uniforms) for (const u of Object.values(m.uniforms)) init(u && u.value);
+      }
+    });
+    await nextFrame();
+    onProgress(0.55);
+
+    const saved = { pos: this.cam.pos.clone(), target: this.cam.target.clone(), hfov: this.cam.hfov };
+    for (const pose of [HOME, ENTRY]) {
+      this.cam.pos.copy(pose.pos);
+      this.cam.target.copy(pose.target);
+      this.cam.hfov = pose.hfov;
+      this._applyFov();
+      r.shadowMap.needsUpdate = true;
+      this._renderOnce();
+      await nextFrame();
+    }
+    if (this.machines.length) {
+      this.post.outline.selectedObjects = [this.machines[0].highlight];
+      this._renderOnce();
+      this.post.outline.selectedObjects = [];
+    }
+    onProgress(0.8);
+
+    // how long does a frame take here? (finish() waits for the GPU)
+    const gl = r.getContext();
+    this._renderOnce();
+    gl.finish();
+    const N = 6, t0 = performance.now();
+    for (let i = 0; i < N; i++) { this._renderOnce(); gl.finish(); }
+    this.warmFrameMs = (performance.now() - t0) / N;
+    if (this.warmFrameMs > 30) this.setQuality(0.5);
+    else if (this.warmFrameMs > 18) this.setQuality(0.75);
+
+    this.cam.pos.copy(saved.pos);
+    this.cam.target.copy(saved.target);
+    this.cam.hfov = saved.hfov;
+    this._applyFov();
+    onProgress(1);
+  }
+
+  _renderOnce() {
+    this.camera.position.copy(this.cam.pos);
+    this.camera.lookAt(this.cam.target);
+    if (this.debugNoPost) this.renderer.render(this.scene, this.camera);
+    else this.post.render(this.timer.getElapsed());
   }
 
   _applyPixelRatio() {
@@ -157,7 +255,7 @@ export class World extends Emitter {
   _setBackdrop(on) {
     if (this._backdrop === on) return;
     this._backdrop = on;
-    this.post.gtao.enabled = !on;
+    this.post.gtao.enabled = !on && this.debug.gtao !== "0";
     this._applyPixelRatio();
   }
 
@@ -346,7 +444,7 @@ export class World extends Emitter {
     for (const m of this.machines) if (m.update) m.update(dt, t);
     this.fx.update(dt, t);
 
-    this.renderer.shadowMap.needsUpdate = now < this._shadowsUntil;
+    if (now < this._shadowsUntil && now - this._shadowAt >= 80) { this.renderer.shadowMap.needsUpdate = true; this._shadowAt = now; }
     this.post.lofi.uniforms.uFocus.value += ((this.studio.panelOpen ? 1 : 0) - this.post.lofi.uniforms.uFocus.value) * Math.min(1, dt * 4);
     if (this.debugNoPost) this.renderer.render(this.scene, this.camera);
     else this.post.render(t);

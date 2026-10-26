@@ -31,11 +31,13 @@ async function boot() {
   studio.world = world;
   if (import.meta.env.DEV) window.__studio = studio;
   const shell = new Shell(studio, world);
-  shell.gateProgress(0.8);
+  shell.gateProgress(0.5);
 
-  // let the GPU compile shaders behind the gate before the door opens
-  world.renderer.compile(world.scene, world.camera);
-  await new Promise((r) => setTimeout(r, 150));
+  // compile every shader, upload every texture and draw the first frames
+  // behind the gate, so nothing stalls once the door opens
+  if (new URLSearchParams(location.search).get("warm") === "0") world.warmFrameMs = 0;   // ?warm=0: skip, to compare
+  else await world.warmUp((p) => shell.gateProgress(0.5 + p * 0.5));
+  if (import.meta.env.DEV) console.info("[room] warm-up", { frameMs: +world.warmFrameMs.toFixed(1), quality: world.quality, merged: world.mergeStats });
 
   const deepLink = location.hash.replace(/^#/, "");
   const sound = await shell.gateReady();
