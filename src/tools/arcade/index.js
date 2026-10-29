@@ -1,4 +1,4 @@
-// The bartop cabinet's panel: a full-size Asteroids with keyboard, on-screen
+// The upright cabinet's panel: a full-size Asteroids with keyboard, on-screen
 // buttons, synthesised cabinet sounds through the room's speakers, and a high
 // score kept in this browser. Walking away pauses the game.
 import "./arcade.css";

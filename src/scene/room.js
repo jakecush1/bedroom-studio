@@ -15,7 +15,9 @@ import { pbr, withGrime } from "./materials.js";
 export const ROOM = { x0: -1.6, x1: 1.6, z0: -2.6, z1: 2.6, h: 2.7 };
 export const WIN = { x0: -0.72, x1: 1.32, y0: 1.0, y1: 2.42 };
 export const DESK = { x0: -1.06, x1: 0.8, z0: -2.58, z1: -1.86, top: 0.76 };
-export const SIDEBOARD = { x0: -1.6, x1: -1.12, z0: -1.72, z1: 0.55, top: 0.78 };
+export const SIDEBOARD = { x0: -1.6, x1: -1.12, z0: -1.0, z1: 0.55, top: 0.78 };
+// floor-standing ASTEROIDS cabinet between the shelf and the sideboard (left wall)
+export const ARCADE = { x: -1.22, z: -1.42, w: 0.66, d: 0.76, h: 1.83 };
 export const BED = { x0: 0.32, x1: 1.6, z0: -0.95, z1: 1.45 };
 
 const WALL_T = 0.16;
@@ -442,7 +444,8 @@ export function buildRoom(scene) {
   // contents: records, boxes, cassettes
   const sleeveCols = [0x8a2a1a, 0x1a3a5a, 0xd8c8a0, 0x2a2a2a, 0x5a7a3a, 0xa86a2a, 0x3a1a4a, 0xc0b090, 0x101010, 0x6a1a2a];
   const rr = rng(88);
-  for (let k = 0; k < 40; k++) {
+  const sleeves = Math.floor((sbD / 3 - 0.06) / 0.016);   // fill the end compartment
+  for (let k = 0; k < sleeves; k++) {
     box(0.31, 0.31, 0.006, std(sleeveCols[(rr() * sleeveCols.length) | 0], { rough: 0.8 }), { parent: sb, x: -0.02, y: 0.075 + 0.155, z: sbD / 6 + 0.03 + k * 0.016, ry: Math.PI / 2, rx: (rr() - 0.5) * 0.05 });
   }
   for (let k = 0; k < 3; k++) box(0.3, 0.1, 0.22, std([0x3a2a20, 0x2a2a30, 0x4a3a2a][k], { rough: 0.8 }), { parent: sb, x: 0.0, y: 0.48 + k * 0.105, z: -sbD / 3, cast: true });

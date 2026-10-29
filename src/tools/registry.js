@@ -39,7 +39,7 @@ export const TOOLS = {
   },
   arcade: {
     title: "ASTEROIDS",
-    subtitle: "Bartop arcade · rotate, thrust, fire, hyperspace · high score kept in this browser",
+    subtitle: "Upright arcade · rotate, thrust, fire, hyperspace · high score kept in this browser",
     origin: "new · after Atari's 1979 vector cabinet",
     width: "medium",
     load: () => import("./arcade/index.js")

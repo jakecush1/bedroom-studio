@@ -26,7 +26,9 @@ function grilleTexture() {
 }
 
 export function buildVox(parent, studio) {
-  const root = group({ parent, x: -0.8, z: -1.22, ry: 0.55, name: "vox1" });
+  // between the chair and the bed, boom reaching over to the chair, so the
+  // stand stays out of the arcade cabinet's close-up
+  const root = group({ parent, x: 0.0, z: -0.75, ry: -0.9, name: "vox1" });
   const black = std(0x141416, { rough: 0.45, metal: 0.55 });
   const chrome = std(0xb8b8bc, { rough: 0.2, metal: 0.95 });
   // tripod + pole

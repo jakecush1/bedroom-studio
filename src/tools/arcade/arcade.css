@@ -1,4 +1,4 @@
-/* ASTEROIDS bartop panel */
+/* ASTEROIDS upright panel */
 .arcade { --accent: #6ff0ff; }
 .arcade .k-btn.on, .arcade .k-btn.primary, .arcade .k-seg button.on { background: linear-gradient(180deg, #b6f7ff, var(--accent)); color: #04161a; }
 .ar-cab { display: grid; gap: 12px; }

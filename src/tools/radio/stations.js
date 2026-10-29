@@ -30,6 +30,12 @@ export const STATIONS = [
     id: "kcr", name: "Kootenay Co-op Radio 93.5", tagline: "Community-powered radio · CJLY", location: "Nelson, BC",
     group: "Local", url: "https://a10.asurahosting.com:7410/radio.mp3", site: "https://www.kootenaycoopradio.com/"
   },
+  {
+    // cfcr.ca/onair's player pulls from this mount (CORS-friendly); the station's
+    // other link, http://68.183.199.246:8000/m4a, is plain http and won't play on https
+    id: "cfcr", name: "CFCR 90.5 FM", tagline: "Saskatoon's community radio · volunteer-run since 1991", location: "Saskatoon, SK",
+    group: "Local", url: "https://onair.cfcr.ca/hifi.mp3", site: "https://cfcr.ca/onair/"
+  },
 
   // ---- Campus: college radio across Canada and the US (all CORS-friendly, so they hit the room meters) ----
   {

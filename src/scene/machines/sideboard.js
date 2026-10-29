@@ -1,11 +1,11 @@
-// Left side of the room, on the sideboard: a bartop ASTEROIDS cabinet, the
-// SCRIBE computer (audio → sheet music) and the turntable that tunes into
-// the radio.
+// Left side of the room: a full-size ASTEROIDS cabinet standing on the floor
+// between the shelf and the sideboard, and on the sideboard the SCRIBE
+// computer (audio → sheet music) and the turntable that tunes into the radio.
 import * as THREE from "three";
 import { box, cyl, sphere, group, std, glow } from "../kit3d.js";
 import { canvasTexture, LiveScreen } from "../textures.js";
 import { machine, ledMat } from "./common.js";
-import { SIDEBOARD } from "../room.js";
+import { SIDEBOARD, ARCADE } from "../room.js";
 import { Asteroids } from "../../tools/arcade/asteroids.js";
 
 const TOP = SIDEBOARD.top;
@@ -119,99 +119,234 @@ function drawScribeScreen(g, w, h, s, t) {
 }
 
 /* ------------------------------------------------------------------ */
-/* ASTEROIDS bartop cabinet                                            */
+/* ASTEROIDS upright cabinet (full size, standing on the floor)         */
 /* ------------------------------------------------------------------ */
 
-function buildArcade(parent, studio) {
-  const root = group({ parent, x: -1.37, y: TOP, z: -1.36, ry: Math.PI / 2 });
-  const shell = std(0x15151c, { rough: 0.45 });
-  const trimMat = std(0x2a2a36, { rough: 0.4, metal: 0.3 });
-  // body: a lower box, a hood leaning back, the sloped control panel
-  box(0.36, 0.24, 0.34, shell, { parent: root, y: 0.12, r: 0.008, cast: true });
-  const hood = group({ parent: root, y: 0.24, z: -0.03, rx: -0.14 });
-  box(0.36, 0.24, 0.26, shell, { parent: hood, y: 0.12, r: 0.008, cast: true });
-  box(0.36, 0.04, 0.12, shell, { parent: root, y: 0.255, z: 0.12, rx: -0.3, cast: true });
-  // side art
-  const art = canvasTexture(256, 384, (g, w, h) => {
+// Side profile of the cabinet in (depth, height); +depth is the front.
+// Back is flat, the control panel juts out, the sides hood the monitor
+// and the marquee is set back under the top.
+const PROFILE = [[-0.38, 0], [0.38, 0], [0.38, 0.92], [0.42, 0.98], [0.3, 1.1], [0.16, 1.6], [0.22, 1.83], [-0.38, 1.83]];
+
+function profileShape(mirror) {
+  const sh = new THREE.Shape();
+  PROFILE.forEach(([z, y], i) => (i ? sh.lineTo(mirror ? -z : z, y) : sh.moveTo(mirror ? -z : z, y)));
+  sh.closePath();
+  return sh;
+}
+
+/** Remap ShapeGeometry UVs (which are raw shape coordinates) onto 0..1 of the profile box. */
+function profileUVs(geo) {
+  const uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (uv.getX(i) + 0.38) / 0.76, uv.getY(i) / 1.83);
+  return geo;
+}
+
+function drawSideArt(mirror) {
+  return (g, w, h) => {
+    const fx = (x) => (mirror ? w - x : x);           // keep the composition's front at the cabinet's front
     const grad = g.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0, "#1a0b2e"); grad.addColorStop(1, "#061a2a");
+    grad.addColorStop(0, "#07061a"); grad.addColorStop(0.55, "#0b1a3a"); grad.addColorStop(1, "#040410");
     g.fillStyle = grad; g.fillRect(0, 0, w, h);
-    for (let i = 0; i < 70; i++) { g.fillStyle = `rgba(255,255,255,${0.3 + Math.random() * 0.6})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
-    g.strokeStyle = "#8fd8ff"; g.lineWidth = 3;
-    for (const [cx, cy, r] of [[70, 110, 46], [180, 250, 34], [120, 320, 20]]) {
-      g.beginPath();
-      for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2, rr = r * (0.7 + 0.35 * Math.sin(k * 2.7)); k ? g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr) : g.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(255,255,255,${0.25 + rnd() * 0.7})`; const r = rnd() < 0.1 ? 2.5 : 1.5; g.fillRect(rnd() * w, rnd() * h, r, r); }
+    // vector rocks, cabinet-art style
+    const rock = (cx, cy, r, col, lw) => {
+      g.strokeStyle = col; g.lineWidth = lw; g.beginPath();
+      for (let k = 0; k < 11; k++) { const a = (k / 11) * Math.PI * 2, rr = r * (0.72 + 0.32 * Math.sin(k * 2.9 + cx)); k ? g.lineTo(fx(cx) + Math.cos(a) * rr, cy + Math.sin(a) * rr) : g.moveTo(fx(cx) + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
       g.closePath(); g.stroke();
-    }
-    g.fillStyle = "#ff3a7a"; g.font = "bold 44px 'VT323', monospace"; g.textAlign = "center";
-    g.fillText("ASTEROIDS", w / 2, h - 30);
-    g.fillStyle = "#ffd36f"; g.fillRect(16, h - 18, w - 32, 4);
-  });
-  for (const sx of [-0.181, 0.181]) {
-    const side = new THREE.Mesh(new THREE.PlaneGeometry(0.33, 0.235), std(0xffffff, { map: art, rough: 0.6 }));
-    side.position.set(sx, 0.12, 0);
-    side.rotation.y = sx > 0 ? Math.PI / 2 : -Math.PI / 2;
-    root.add(side);
+      g.strokeStyle = "rgba(143,216,255,0.35)"; g.lineWidth = 1.5;
+      g.beginPath(); g.moveTo(fx(cx) - r * 0.5, cy - r * 0.2); g.lineTo(fx(cx) + r * 0.2, cy + r * 0.4); g.lineTo(fx(cx) + r * 0.5, cy - r * 0.3); g.stroke();
+    };
+    rock(110, 250, 78, "#cfeeff", 5);
+    rock(290, 420, 52, "#8fd8ff", 4);
+    rock(90, 560, 40, "#8fd8ff", 4);
+    rock(300, 700, 70, "#cfeeff", 5);
+    rock(150, 820, 30, "#8fd8ff", 3);
+    // the ship, with a thrust flame
+    g.save(); g.translate(fx(230), 560); g.rotate(mirror ? 2.4 : -0.7);
+    g.strokeStyle = "#ffffff"; g.lineWidth = 4; g.beginPath(); g.moveTo(34, 0); g.lineTo(-24, 20); g.lineTo(-14, 0); g.lineTo(-24, -20); g.closePath(); g.stroke();
+    g.strokeStyle = "#ff9a3c"; g.lineWidth = 3; g.beginPath(); g.moveTo(-18, 8); g.lineTo(-44, 0); g.lineTo(-18, -8); g.stroke();
+    g.restore();
+    // shots
+    g.fillStyle = "#ffffff";
+    for (const [x, y] of [[262, 530], [285, 505], [306, 482]]) g.fillRect(fx(x) - 2, y - 2, 4, 4);
+    // title down the back edge
+    g.save();
+    g.translate(fx(60), h / 2); g.rotate(mirror ? Math.PI / 2 : -Math.PI / 2);
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.font = "bold 92px 'VT323', 'Courier New', monospace";
+    g.lineWidth = 10; g.strokeStyle = "#3a0f5a"; g.strokeText("ASTEROIDS", 0, 0);
+    const tg = g.createLinearGradient(-280, 0, 280, 0);
+    tg.addColorStop(0, "#ff3a7a"); tg.addColorStop(0.5, "#ffd36f"); tg.addColorStop(1, "#ff3a7a");
+    g.fillStyle = tg; g.fillText("ASTEROIDS", 0, 0);
+    g.restore();
+    // stripes along the bottom
+    g.fillStyle = "#ff3a7a"; g.fillRect(0, h - 70, w, 10);
+    g.fillStyle = "#ffd36f"; g.fillRect(0, h - 54, w, 6);
+    g.fillStyle = "#8fd8ff"; g.fillRect(0, h - 44, w, 3);
+  };
+}
+
+function drawMarquee(g, w, h) {
+  const grad = g.createLinearGradient(0, 0, w, 0);
+  grad.addColorStop(0, "#1b0a33"); grad.addColorStop(0.5, "#06283a"); grad.addColorStop(1, "#1b0a33");
+  g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  let seed = 3;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 120; i++) { g.fillStyle = `rgba(255,255,255,${0.3 + rnd() * 0.6})`; g.fillRect(rnd() * w, rnd() * h, 2, 2); }
+  g.strokeStyle = "#8fd8ff"; g.lineWidth = 4;
+  for (const [cx, cy, r] of [[90, 90, 56], [w - 110, 230, 48], [w - 60, 70, 26], [170, 260, 22]]) {
+    g.beginPath();
+    for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2, rr = r * (0.7 + 0.35 * Math.sin(k * 2.7)); k ? g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr) : g.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+    g.closePath(); g.stroke();
   }
-  // marquee
-  const marqueeTex = canvasTexture(512, 96, (g, w, h) => {
-    const grad = g.createLinearGradient(0, 0, w, 0);
-    grad.addColorStop(0, "#1b0a33"); grad.addColorStop(0.5, "#06283a"); grad.addColorStop(1, "#1b0a33");
-    g.fillStyle = grad; g.fillRect(0, 0, w, h);
-    g.fillStyle = "#9df3ff"; g.font = "bold 64px 'VT323', monospace"; g.textAlign = "center";
-    g.shadowColor = "#6ff0ff"; g.shadowBlur = 14;
-    g.fillText("ASTEROIDS", w / 2, 68);
-  });
-  const marquee = new THREE.Mesh(new THREE.PlaneGeometry(0.33, 0.062), glow(0xffffff, 1.5, { map: marqueeTex }));
-  marquee.position.set(0, 0.19, 0.137);   // just proud of the trim
-  marquee.userData.keep = true;
-  hood.add(marquee);
-  box(0.36, 0.075, 0.03, trimMat, { parent: hood, y: 0.19, z: 0.12 });
-  // bezel + screen (the attract mode runs on it)
-  box(0.3, 0.17, 0.012, std(0x08080b, { rough: 0.3 }), { parent: hood, y: 0.06, z: 0.126 });
+  g.textAlign = "center";
+  g.font = "bold 190px 'VT323', 'Courier New', monospace";
+  g.lineWidth = 14; g.strokeStyle = "#3a0f5a"; g.strokeText("ASTEROIDS", w / 2, 210);
+  g.shadowColor = "#6ff0ff"; g.shadowBlur = 28;
+  const tg = g.createLinearGradient(0, 60, 0, 220);
+  tg.addColorStop(0, "#ffffff"); tg.addColorStop(0.55, "#9df3ff"); tg.addColorStop(1, "#3fb6ff");
+  g.fillStyle = tg; g.fillText("ASTEROIDS", w / 2, 210);
+  g.shadowBlur = 0;
+  g.font = "bold 34px 'VT323', 'Courier New', monospace"; g.fillStyle = "#ffd36f";
+  g.fillText("ROOM 808 AMUSEMENTS", w / 2, 285);
+}
+
+function drawBezel(g, w, h) {
+  g.fillStyle = "#06060c"; g.fillRect(0, 0, w, h);
+  // blue rays from behind the screen
+  g.save(); g.translate(w / 2, h * 0.46);
+  for (let k = 0; k < 28; k++) {
+    g.rotate((Math.PI * 2) / 28);
+    g.fillStyle = k % 2 ? "rgba(63,182,255,0.16)" : "rgba(143,216,255,0.07)";
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(w, -w * 0.06); g.lineTo(w, w * 0.06); g.closePath(); g.fill();
+  }
+  g.restore();
+  g.fillStyle = "#000"; g.fillRect(w * 0.19, h * 0.11, w * 0.62, h * 0.7);   // behind the tube
+  g.strokeStyle = "#3fb6ff"; g.lineWidth = 3; g.strokeRect(w * 0.17, h * 0.09, w * 0.66, h * 0.74);
+  g.textAlign = "center"; g.fillStyle = "#cfeeff";
+  g.font = "bold 26px 'VT323', 'Courier New', monospace";
+  g.fillText("ROTATE  ·  THRUST  ·  FIRE  ·  HYPERSPACE", w / 2, h - 34);
+  g.fillStyle = "#ffd36f"; g.font = "bold 20px 'VT323', 'Courier New', monospace";
+  g.fillText("1 COIN  1 PLAY", w / 2, h - 12);
+}
+
+function drawPanelOverlay(g, w, h) {
+  const grad = g.createLinearGradient(0, 0, 0, h);
+  grad.addColorStop(0, "#0b1a3a"); grad.addColorStop(1, "#07061a");
+  g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  g.strokeStyle = "#3fb6ff"; g.lineWidth = 4; g.strokeRect(8, 8, w - 16, h - 16);
+  g.fillStyle = "#ffffff"; g.textAlign = "center";
+  // label positions follow the buttons placed in buildArcade (x in metres across 0.62, z across 0.30; +z is the front edge)
+  const X = (x) => (x / 0.62 + 0.5) * w, Y = (z) => (0.5 + z / 0.3) * h;
+  g.font = "bold 16px 'VT323', 'Courier New', monospace";
+  for (const [x, t] of [[-0.21, "ROTATE"], [-0.13, "ROTATE"], [0.07, "HYPERSPACE"], [0.15, "THRUST"], [0.23, "FIRE"]]) g.fillText(t, X(x), Y(0.08));
+  g.font = "18px 'VT323', 'Courier New', monospace";
+  g.fillText("◄", X(-0.21), Y(0.115)); g.fillText("►", X(-0.13), Y(0.115));
+  g.fillStyle = "#ffd36f"; g.font = "bold 17px 'VT323', 'Courier New', monospace";
+  g.fillText("1 PLAYER", X(-0.055), Y(-0.045)); g.fillText("2 PLAYERS", X(0.055), Y(-0.045));
+  g.fillStyle = "#8fd8ff"; g.font = "bold 24px 'VT323', 'Courier New', monospace";
+  g.fillText("ASTEROIDS", X(-0.03), Y(0.135));   // on the front strip, under the labels
+}
+
+function buildArcade(parent, studio) {
+  const { w, d, h } = ARCADE;
+  const iw = w - 0.04;                                  // inner width between the side slabs
+  const root = group({ parent, x: ARCADE.x, z: ARCADE.z, ry: Math.PI / 2 });   // local +z faces into the room
+  const shell = std(0x101016, { rough: 0.5 });
+  const trimMat = std(0x2a2a36, { rough: 0.4, metal: 0.3 });
+  const black = std(0x050508, { rough: 0.6 });
+
+  // side slabs cut to the cabinet profile, with the art on their outer faces
+  const slabGeo = new THREE.ExtrudeGeometry(profileShape(false), { depth: 0.02, bevelEnabled: false });
+  for (const sx of [-1, 1]) {
+    const slab = new THREE.Mesh(slabGeo, shell);
+    slab.rotation.y = -Math.PI / 2;                      // shape depth → local z, extrusion → local -x
+    slab.position.x = sx > 0 ? w / 2 : -w / 2 + 0.02;
+    slab.castShadow = true;
+    root.add(slab);
+    const art = new THREE.Mesh(profileUVs(new THREE.ShapeGeometry(profileShape(sx > 0))), std(0xffffff, { map: canvasTexture(384, 928, drawSideArt(sx > 0)), rough: 0.55 }));
+    art.rotation.y = sx > 0 ? Math.PI / 2 : -Math.PI / 2;
+    art.position.x = sx * (w / 2 + 0.001);
+    root.add(art);
+  }
+  // back, top, kick plate and the lower front
+  box(iw, h, 0.02, shell, { parent: root, y: h / 2, z: -d / 2 + 0.01 });
+  box(w, 0.03, 0.6, shell, { parent: root, y: h - 0.015, z: -0.08 });
+  box(iw, 0.98, 0.02, shell, { parent: root, y: 0.49, z: d / 2 - 0.01, cast: true });
+  box(iw, 0.1, 0.01, black, { parent: root, y: 0.05, z: d / 2 - 0.003 });
+  // coin door
+  box(0.22, 0.3, 0.012, trimMat, { parent: root, y: 0.42, z: d / 2 + 0.004 });
+  for (const cx of [-0.05, 0.05]) {
+    box(0.03, 0.05, 0.004, black, { parent: root, x: cx, y: 0.5, z: d / 2 + 0.011 });
+    box(0.012, 0.035, 0.003, std(0x000000), { parent: root, x: cx, y: 0.5, z: d / 2 + 0.014 });
+  }
+  box(0.08, 0.05, 0.006, black, { parent: root, y: 0.32, z: d / 2 + 0.011 });
+  cyl(0.009, 0.009, 0.006, std(0xd8d4c8, { metal: 0.8, rough: 0.3 }), { parent: root, x: 0.08, y: 0.42, z: d / 2 + 0.012, rx: Math.PI / 2 });
+  // control panel: tilted shelf jutting forward, five buttons like the original, two start buttons
+  const panel = group({ parent: root, y: 1.0, z: 0.26, rx: 0.22 });
+  box(iw + 0.04, 0.05, 0.3, shell, { parent: panel, cast: true });
+  const overlay = new THREE.Mesh(new THREE.PlaneGeometry(iw, 0.3), std(0xffffff, { map: canvasTexture(640, 320, drawPanelOverlay), rough: 0.5 }));
+  overlay.rotation.x = -Math.PI / 2;
+  overlay.position.y = 0.0255;
+  panel.add(overlay);
+  const cream = std(0xe8e2d0, { rough: 0.35 });
+  const fireLed = ledMat(0xff5a4b, 0.5), hyperLed = ledMat(0x6ff0ff, 0.3), startLed = ledMat(0xffd36f, 0.4);
+  const button = (x, z, mat, r = 0.016) => {
+    cyl(r + 0.004, r + 0.005, 0.008, trimMat, { parent: panel, x, y: 0.028, z });
+    cyl(r, r, 0.014, mat, { parent: panel, x, y: 0.036, z });
+  };
+  button(-0.21, 0.03, cream); button(-0.13, 0.03, cream);
+  button(0.07, 0.03, hyperLed); button(0.15, 0.03, cream); button(0.23, 0.03, fireLed);
+  button(-0.05, -0.09, startLed, 0.009); button(0.05, -0.09, startLed, 0.009);
+  // monitor: a bezel leaning back with a 19" CRT in it
+  const hood = group({ parent: root, y: 1.05, z: 0.1, rx: -0.3 });
+  box(iw, 0.5, 0.03, black, { parent: hood, y: 0.25, z: -0.015 });
+  const bezel = new THREE.Mesh(new THREE.PlaneGeometry(iw - 0.002, 0.5), std(0xffffff, { map: canvasTexture(640, 512, drawBezel), rough: 0.4 }));
+  bezel.position.set(0, 0.25, 0.001);
+  hood.add(bezel);
   const live = () => studio.state.arcade;
   const demo = new Asteroids();
   let acc = 0;
-  const scr = new LiveScreen(320, 240, (g, w, h, t) => {
+  const scr = new LiveScreen(512, 384, (g, w2, h2, t) => {
     demo.hi = Math.max(demo.hi, (live() && live().hi) || 0);
     demo.last = live() ? live().last : null;
-    demo.render(g, w, h, { hi: demo.hi, glow: false, small: true });
+    demo.render(g, w2, h2, { hi: demo.hi, glow: false, small: true });
     void t;
   });
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.236, 0.154), new THREE.MeshBasicMaterial({ map: scr.texture, toneMapped: false }));
-  screen.position.set(0, 0.062, 0.133);
+  const tube = new THREE.PlaneGeometry(0.38, 0.285, 12, 10);   // slight CRT bulge
+  const tp = tube.attributes.position;
+  for (let i = 0; i < tp.count; i++) { const x = tp.getX(i) / 0.19, y = tp.getY(i) / 0.1425; tp.setZ(i, 0.014 * (1 - 0.5 * (x * x + y * y))); }
+  const screen = new THREE.Mesh(tube, new THREE.MeshBasicMaterial({ map: scr.texture, toneMapped: false }));
+  screen.position.set(0, 0.27, 0.003);
   screen.userData.keep = true;
   hood.add(screen);
-  const glowLight = new THREE.PointLight(0x8fd8ff, 0.45, 1.3, 2);
-  glowLight.position.set(0, 0.1, 0.4);
+  const glowLight = new THREE.PointLight(0x8fd8ff, 0.7, 1.8, 2);
+  glowLight.position.set(0, 0.35, 0.5);
   hood.add(glowLight);
-  // speaker grille under the marquee
-  for (let k = 0; k < 6; k++) box(0.12, 0.003, 0.004, std(0x05050a), { parent: hood, y: 0.146 + k * 0.006, z: 0.128 });
-  // control panel: joystick, two buttons, a start button
-  const panel = group({ parent: root, y: 0.275, z: 0.12, rx: -0.3 });
-  cyl(0.005, 0.007, 0.036, std(0x1a1a1a, { rough: 0.4 }), { parent: panel, x: -0.09, y: 0.018 });
-  sphere(0.012, std(0xd8382c, { rough: 0.25 }), { parent: panel, x: -0.09, y: 0.04 });
-  cyl(0.018, 0.02, 0.006, trimMat, { parent: panel, x: -0.09, y: 0.003 });
-  const fireLed = ledMat(0xff5a4b, 0.5), hyperLed = ledMat(0x6ff0ff, 0.3), startLed = ledMat(0xffd36f, 0.4);
-  cyl(0.016, 0.017, 0.012, fireLed, { parent: panel, x: 0.03, y: 0.006 });
-  cyl(0.016, 0.017, 0.012, hyperLed, { parent: panel, x: 0.08, y: 0.006, z: -0.025 });
-  box(0.028, 0.008, 0.014, startLed, { parent: panel, x: 0.0, y: 0.004, z: 0.04 });
-  // coin door
-  box(0.08, 0.06, 0.004, trimMat, { parent: root, y: 0.07, z: 0.172 });
-  box(0.03, 0.004, 0.003, std(0x000000), { parent: root, y: 0.085, z: 0.175 });
-  box(0.012, 0.012, 0.003, std(0xd8d4c8), { parent: root, x: -0.02, y: 0.06, z: 0.175 });
-  // feet
-  for (const [fx, fz] of [[-0.15, -0.14], [0.15, -0.14], [-0.15, 0.14], [0.15, 0.14]]) cyl(0.012, 0.012, 0.01, std(0x0a0a0c), { parent: root, x: fx, y: -0.004, z: fz });
+  // marquee: leans forward over the monitor, lit from behind
+  const top = group({ parent: root, y: 1.53, z: -0.05, rx: 0.25 });
+  box(iw, 0.3, 0.03, shell, { parent: top, y: 0.15, z: -0.015 });
+  const marquee = new THREE.Mesh(new THREE.PlaneGeometry(iw - 0.06, 0.2), glow(0xffffff, 1.4, { map: canvasTexture(1024, 330, drawMarquee) }));
+  marquee.position.set(0, 0.15, 0.002);
+  marquee.userData.keep = true;
+  top.add(marquee);
+  box(iw, 0.02, 0.04, trimMat, { parent: top, y: 0.04, z: 0.005 });
+  box(iw, 0.02, 0.04, trimMat, { parent: top, y: 0.26, z: 0.005 });
+  // speaker grille between the marquee and the monitor
+  for (let k = 0; k < 7; k++) box(0.16, 0.004, 0.006, black, { parent: top, y: 0.012 + k * 0.004, z: 0.004 });
 
   const m = machine({
     id: "arcade",
     label: "ASTEROIDS",
-    hint: "Bartop arcade · rotate, thrust, fire, hyperspace",
+    hint: "Full-size upright · rotate, thrust, fire, hyperspace",
     zone: "chip",
     root,
-    hit: [0.4, 0.56, 0.4],
-    hitOffset: [0, 0.27, 0],
-    focus: { pos: [0, 0.5, 0.98], target: [0, 0.3, 0.02], hfov: 50 }
+    hit: [w + 0.06, h, d + 0.1],
+    hitOffset: [0, h / 2, 0.02],
+    // from a little toward the back wall, so the VOX boom stays out of the shot
+    focus: { pos: [0.5, 1.42, 1.75], target: [0.05, 1.3, 0.0], hfov: 60 }
   });
   let timer = 0;
   m.update = (dt, t) => {
@@ -226,7 +361,7 @@ function buildArcade(parent, studio) {
     demo.step(acc);
     acc = 0;
     scr.update(t);
-    glowLight.intensity = 0.4 + Math.random() * 0.08;
+    glowLight.intensity = 0.65 + Math.random() * 0.1;
   };
   return m;
 }

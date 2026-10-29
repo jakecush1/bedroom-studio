@@ -1,5 +1,5 @@
 // Asteroids — the simulation and its vector-line renderer, independent of
-// the DOM so the bartop cabinet on the sideboard can run the attract mode on
+// the DOM so the upright cabinet on the floor can run the attract mode on
 // its little screen while the panel runs the real game.
 //
 //   const game = new Asteroids({ sound });   // sound(name, arg) is optional
