@@ -1,0 +1,36 @@
+/* SCRIBE panel: a vintage terminal at a desk with paper on it */
+.scribe { --accent: #5cff8a; }
+.scribe .k-module.over { border-color: var(--accent); background: rgba(92,255,138,0.06); }
+.scribe .k-seg button.on, .scribe .k-btn.on, .scribe .k-btn.primary { background: linear-gradient(180deg, #9dffb8, var(--accent)); color: #04150a; }
+.scribe .k-knob .fader-fill { background: var(--accent); }
+.scribe .grow { flex: 1; }
+.sb-info { margin-top: 8px; font-family: var(--mono); font-size: 11px; line-height: 1.5; }
+.sb-settings { gap: 14px; }
+.sb-settings .k-field.dim, .sb-settings .k-knob.dim { opacity: 0.4; pointer-events: none; }
+.sb-status { display: flex; flex-direction: column; gap: 6px; font-family: var(--mono); font-size: 11px; color: var(--cream-dim); }
+.sb-status.busy span { color: var(--accent); animation: sb-pulse 1.4s ease-in-out infinite; }
+@keyframes sb-pulse { 50% { opacity: 0.55; } }
+
+/* the sheet */
+.sb-paper {
+  background: #f3ecd9; color: #1c1710; border-radius: 6px; padding: 18px 22px 10px; min-height: 220px;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25), 0 12px 30px rgba(0,0,0,0.35);
+  background-image: linear-gradient(180deg, rgba(255,255,255,0.35), transparent 40%);
+  overflow: auto; position: relative;
+}
+.sb-paper svg { max-width: 100%; height: auto; }
+.sb-paper .abcjs-title { font-family: Georgia, "Times New Roman", serif; }
+.sb-paper .abcjs-note, .sb-paper .abcjs-rest, .sb-paper .abcjs-staff, .sb-paper .abcjs-bar, .sb-paper .abcjs-clef, .sb-paper .abcjs-key-signature, .sb-paper .abcjs-time-signature, .sb-paper .abcjs-tempo, .sb-paper .abcjs-title, .sb-paper .abcjs-text, .sb-paper .abcjs-composer, .sb-paper .abcjs-ledger, .sb-paper .abcjs-slur, .sb-paper .abcjs-stem, .sb-paper .abcjs-beam-elem { fill: #1c1710; }
+.sb-paper .abcjs-note.sb-hot, .sb-paper .abcjs-note.sb-hot * { fill: #c0302a !important; }
+.sb-paper .sb-empty { font-family: Georgia, serif; font-style: italic; color: #6a5d48; padding: 60px 0; text-align: center; }
+.sb-paper .sb-stamp { position: absolute; right: 14px; bottom: 8px; font-family: var(--mono); font-size: 9px; color: #8a7d66; letter-spacing: 0.14em; text-transform: uppercase; }
+
+.sb-transport { gap: 12px; align-items: flex-end; }
+.sb-time { font-family: var(--mono); font-size: 13px; color: var(--cream-dim); min-width: 110px; padding-bottom: 8px; }
+.sb-summary { font-family: var(--mono); font-size: 11px; line-height: 1.5; }
+.sb-out { gap: 8px; }
+.sb-title { width: 220px; }
+
+@media print {
+  body > *:not(.panel-host), .sp-head, .sp-body > *:not(.sb-print-target) { display: none !important; }
+}

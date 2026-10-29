@@ -1,10 +1,12 @@
-// Left side of the room: the SCRIBE computer (audio → sheet music), the
-// Song Analyzer rack and the turntable that tunes into the Internet Archive.
+// Left side of the room, on the sideboard: a bartop ASTEROIDS cabinet, the
+// SCRIBE computer (audio → sheet music) and the turntable that tunes into
+// the radio.
 import * as THREE from "three";
-import { box, cyl, sphere, group, std } from "../kit3d.js";
+import { box, cyl, sphere, group, std, glow } from "../kit3d.js";
 import { canvasTexture, LiveScreen } from "../textures.js";
 import { machine, ledMat } from "./common.js";
 import { SIDEBOARD } from "../room.js";
+import { Asteroids } from "../../tools/arcade/asteroids.js";
 
 const TOP = SIDEBOARD.top;
 
@@ -13,7 +15,7 @@ const TOP = SIDEBOARD.top;
 /* ------------------------------------------------------------------ */
 
 function buildScribe(parent, studio) {
-  const root = group({ parent, x: -1.37, y: TOP, z: -1.36, ry: Math.PI / 2 });
+  const root = group({ parent, x: -1.37, y: TOP, z: -0.74, ry: Math.PI / 2 });
   const beige = std(0xcdbf9e, { rough: 0.6 });
   const beigeDark = std(0xb3a483, { rough: 0.65 });
   box(0.4, 0.1, 0.34, beige, { parent: root, y: 0.05, r: 0.01, cast: true });
@@ -82,7 +84,8 @@ function drawScribeScreen(g, w, h, s, t) {
   g.fillRect(0, 0, w, h);
   g.fillStyle = "#2a2418";
   g.font = "bold 20px 'VT323', 'Courier New', monospace";
-  g.fillText((s && s.title) || "SCRIBE 1.0  —  hum me a tune", 16, 28);
+  g.fillText(((s && s.title) || "SCRIBE 1.0  —  hum me a tune").slice(0, 40), 16, 28);
+  if (s && s.line) { g.font = "16px 'VT323', 'Courier New', monospace"; g.fillText(s.line, 16, 48); g.font = "bold 20px 'VT323', 'Courier New', monospace"; }
   // two staves
   const notes = (s && s.preview) || [67, 69, 71, 72, 74, 72, 71, 69, 67, 64, 65, 67, 69, 67, 65, 64];
   for (let staff = 0; staff < 2; staff++) {
@@ -116,148 +119,116 @@ function drawScribeScreen(g, w, h, s, t) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Analyser rack                                                       */
+/* ASTEROIDS bartop cabinet                                            */
 /* ------------------------------------------------------------------ */
 
-const UNITS = [
-  { id: "dynamics", label: "LV-1 Level", face: 0xb7b4ac, text: "#1a1a1a" },
-  { id: "chords", label: "CD-1 Chords", face: 0x2a2c31, text: "#d8dae0" },
-  { id: "beats", label: "BT-1 Tempo", face: 0x121214, text: "#ff6a3a" },
-  { id: "melody", label: "KY-1 Key", face: 0x1d2a44, text: "#9ad0ff" }
-];
-
-function buildRack(parent, studio) {
-  const rack = group({ parent, x: -1.38, y: TOP, z: -0.74, ry: Math.PI / 2 });
-  box(0.3, 0.05, 0.27, std(0x4a3320, { rough: 0.7 }), { parent: rack, y: 0.025, cast: true });
-  const UH = 0.082;
-  const updates = [];
-  UNITS.forEach((u, i) => {
-    const y = 0.05 + i * (UH + 0.004) + UH / 2;
-    const unit = group({ parent: rack, y });
-    box(0.27, UH, 0.24, std(0x18181b, { rough: 0.5, metal: 0.4 }), { parent: unit, cast: true });
-    const face = std(u.face, { rough: 0.4, metal: 0.5 });
-    box(0.28, UH - 0.002, 0.008, face, { parent: unit, z: 0.124 });
-    for (const sx of [-0.125, 0.125]) for (const sy of [-0.025, 0.025]) cyl(0.004, 0.004, 0.003, std(0x9a9a9a, { metal: 0.9, rough: 0.2 }), { parent: unit, x: sx, y: sy, z: 0.129, rx: Math.PI / 2, seg: 8 });
-    const label = canvasTexture(256, 32, (g, w, h) => {
-      g.clearRect(0, 0, w, h);
-      g.fillStyle = u.text;
-      g.font = "bold 20px 'Helvetica Neue', Arial";
-      g.fillText(u.label.split(" ")[0], 4, 22);
-      g.font = "14px monospace";
-      g.fillText(u.label.split(" ").slice(1).join(" ").toUpperCase(), 66, 21);
-    });
-    const lp = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.0138), new THREE.MeshStandardMaterial({ map: label, transparent: true, roughness: 0.5 }));
-    lp.position.set(-0.06, 0.028, 0.1285);
-    unit.add(lp);
-    const scr = new LiveScreen(256, 96, (g, w, h, s, t) => drawUnit(u.id, g, w, h, s, t));
-    scr.update(null, 0);
-    const sm = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 0.036), new THREE.MeshBasicMaterial({ map: scr.texture, toneMapped: false }));
-    sm.position.set(-0.06, -0.006, 0.1286);
-    unit.add(sm);
-    for (let k = 0; k < 3; k++) cyl(0.009, 0.01, 0.012, std(0x0e0e10, { rough: 0.4 }), { parent: unit, x: 0.03 + k * 0.032, y: -0.008, z: 0.134, rx: Math.PI / 2 });
-    const led = ledMat(u.id === "beats" ? 0xff3010 : 0x40ff70, 0.2);
-    sphere(0.004, led, { parent: unit, x: 0.115, y: 0.026, z: 0.129 });
-    let timer = i * 0.02;
-    updates.push((dt, t) => {
-      const s = studio.state.analyzer;
-      if (u.id === "beats") {
-        const bpm = (s && s.bpm) || 0;
-        led.emissiveIntensity = bpm ? (((t * bpm) / 60) % 1 < 0.15 ? 3 : 0.1) : 0.15;
-      } else {
-        led.emissiveIntensity = s && s.busy ? 1 + Math.sin(t * 10) : 0.6;
-      }
-      timer -= dt;
-      if (timer > 0) return;
-      timer = 1 / 15;
-      scr.update(s, t);
-    });
+function buildArcade(parent, studio) {
+  const root = group({ parent, x: -1.37, y: TOP, z: -1.36, ry: Math.PI / 2 });
+  const shell = std(0x15151c, { rough: 0.45 });
+  const trimMat = std(0x2a2a36, { rough: 0.4, metal: 0.3 });
+  // body: a lower box, a hood leaning back, the sloped control panel
+  box(0.36, 0.24, 0.34, shell, { parent: root, y: 0.12, r: 0.008, cast: true });
+  const hood = group({ parent: root, y: 0.24, z: -0.03, rx: -0.14 });
+  box(0.36, 0.24, 0.26, shell, { parent: hood, y: 0.12, r: 0.008, cast: true });
+  box(0.36, 0.04, 0.12, shell, { parent: root, y: 0.255, z: 0.12, rx: -0.3, cast: true });
+  // side art
+  const art = canvasTexture(256, 384, (g, w, h) => {
+    const grad = g.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, "#1a0b2e"); grad.addColorStop(1, "#061a2a");
+    g.fillStyle = grad; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 70; i++) { g.fillStyle = `rgba(255,255,255,${0.3 + Math.random() * 0.6})`; g.fillRect(Math.random() * w, Math.random() * h, 2, 2); }
+    g.strokeStyle = "#8fd8ff"; g.lineWidth = 3;
+    for (const [cx, cy, r] of [[70, 110, 46], [180, 250, 34], [120, 320, 20]]) {
+      g.beginPath();
+      for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2, rr = r * (0.7 + 0.35 * Math.sin(k * 2.7)); k ? g.lineTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr) : g.moveTo(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); }
+      g.closePath(); g.stroke();
+    }
+    g.fillStyle = "#ff3a7a"; g.font = "bold 44px 'VT323', monospace"; g.textAlign = "center";
+    g.fillText("ASTEROIDS", w / 2, h - 30);
+    g.fillStyle = "#ffd36f"; g.fillRect(16, h - 18, w - 32, 4);
   });
-  const m = machine({
-    id: "analyzer",
-    label: "Song Analyzer",
-    hint: "BPM · key · chord progression of any song",
-    zone: "studio",
-    root: rack,
-    hit: [0.32, 0.4, 0.3],
-    hitOffset: [0, 0.2, 0.01],
-    focus: { pos: [0, 0.3, 0.95], target: [0, 0.2, 0.08], hfov: 50 }
-  });
-  m.update = (dt, t) => updates.forEach((u) => u(dt, t));
-  return [m];
-}
-
-function drawUnit(id, g, w, h, s, t) {
-  if (id === "melody") {
-    g.fillStyle = "#06121f";
-    g.fillRect(0, 0, w, h);
-    g.strokeStyle = "#7cc4ff";
-    g.lineWidth = 2;
-    g.beginPath();
-    const curve = s && s.contour;
-    for (let x = 0; x < w; x += 4) {
-      const v = curve ? curve[Math.floor((x / w) * curve.length)] : 0.5 + 0.3 * Math.sin(x * 0.05 + t) * Math.sin(x * 0.013);
-      const y = h - 10 - v * (h - 20);
-      x ? g.lineTo(x, y) : g.moveTo(x, y);
-    }
-    g.stroke();
-    g.fillStyle = "#cfe8ff";
-    g.font = "bold 26px monospace";
-    g.fillText((s && s.key) || "KEY ?", 8, 30);
-  } else if (id === "beats") {
-    g.fillStyle = "#120402";
-    g.fillRect(0, 0, w, h);
-    g.font = "bold 46px 'Courier New', monospace";
-    g.fillStyle = "#ff5b1f";
-    g.shadowColor = "#ff5b1f";
-    g.shadowBlur = 10;
-    const bpm = s && s.bpm ? s.bpm.toFixed(1) : "---.-";
-    g.fillText(bpm, 10, 62);
-    g.shadowBlur = 0;
-    g.font = "14px monospace";
-    g.fillText("BPM", 200, 62);
-    const beat = s && s.bpm ? Math.floor((t * s.bpm) / 60) % 4 : -1;
-    for (let k = 0; k < 4; k++) {
-      g.fillStyle = k === beat ? "#ff5b1f" : "#3a1408";
-      g.fillRect(12 + k * 40, 76, 30, 10);
-    }
-  } else if (id === "chords") {
-    g.fillStyle = "#031014";
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = "#4fe8ff";
-    g.shadowColor = "#4fe8ff";
-    g.shadowBlur = 10;
-    g.font = "bold 44px 'Helvetica Neue', Arial";
-    g.fillText((s && s.chord) || "—", 12, 56);
-    g.shadowBlur = 0;
-    g.font = "15px monospace";
-    g.fillText((s && s.next) ? `next ${s.next}` : "CHORDS", 12, 84);
-  } else {
-    // dynamics: two VU meters
-    g.fillStyle = "#e8dcb8";
-    g.fillRect(0, 0, w, h);
-    const lv = s && s.level != null ? s.level : 0.08 + 0.04 * Math.sin(t * 3);
-    for (let k = 0; k < 2; k++) {
-      const cx = 64 + k * 128, cy = 92;
-      g.strokeStyle = "#5a4a2a";
-      g.lineWidth = 2;
-      g.beginPath();
-      g.arc(cx, cy, 60, Math.PI * 1.15, Math.PI * 1.85);
-      g.stroke();
-      g.strokeStyle = "#c0301a";
-      g.beginPath();
-      g.arc(cx, cy, 60, Math.PI * 1.7, Math.PI * 1.85);
-      g.stroke();
-      const a = Math.PI * (1.18 + 0.64 * Math.min(1, lv * (k ? 1.05 : 1)));
-      g.strokeStyle = "#111";
-      g.beginPath();
-      g.moveTo(cx, cy);
-      g.lineTo(cx + Math.cos(a) * 66, cy + Math.sin(a) * 66);
-      g.stroke();
-    }
-    g.fillStyle = "#1a1a1a";
-    g.font = "italic bold 22px Georgia, serif";
-    g.fillText((s && s.mark) || "", 112, 30);
+  for (const sx of [-0.181, 0.181]) {
+    const side = new THREE.Mesh(new THREE.PlaneGeometry(0.33, 0.235), std(0xffffff, { map: art, rough: 0.6 }));
+    side.position.set(sx, 0.12, 0);
+    side.rotation.y = sx > 0 ? Math.PI / 2 : -Math.PI / 2;
+    root.add(side);
   }
+  // marquee
+  const marqueeTex = canvasTexture(512, 96, (g, w, h) => {
+    const grad = g.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0, "#1b0a33"); grad.addColorStop(0.5, "#06283a"); grad.addColorStop(1, "#1b0a33");
+    g.fillStyle = grad; g.fillRect(0, 0, w, h);
+    g.fillStyle = "#9df3ff"; g.font = "bold 64px 'VT323', monospace"; g.textAlign = "center";
+    g.shadowColor = "#6ff0ff"; g.shadowBlur = 14;
+    g.fillText("ASTEROIDS", w / 2, 68);
+  });
+  const marquee = new THREE.Mesh(new THREE.PlaneGeometry(0.33, 0.062), glow(0xffffff, 1.5, { map: marqueeTex }));
+  marquee.position.set(0, 0.19, 0.137);   // just proud of the trim
+  marquee.userData.keep = true;
+  hood.add(marquee);
+  box(0.36, 0.075, 0.03, trimMat, { parent: hood, y: 0.19, z: 0.12 });
+  // bezel + screen (the attract mode runs on it)
+  box(0.3, 0.17, 0.012, std(0x08080b, { rough: 0.3 }), { parent: hood, y: 0.06, z: 0.126 });
+  const live = () => studio.state.arcade;
+  const demo = new Asteroids();
+  let acc = 0;
+  const scr = new LiveScreen(320, 240, (g, w, h, t) => {
+    demo.hi = Math.max(demo.hi, (live() && live().hi) || 0);
+    demo.last = live() ? live().last : null;
+    demo.render(g, w, h, { hi: demo.hi, glow: false, small: true });
+    void t;
+  });
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.236, 0.154), new THREE.MeshBasicMaterial({ map: scr.texture, toneMapped: false }));
+  screen.position.set(0, 0.062, 0.133);
+  screen.userData.keep = true;
+  hood.add(screen);
+  const glowLight = new THREE.PointLight(0x8fd8ff, 0.45, 1.3, 2);
+  glowLight.position.set(0, 0.1, 0.4);
+  hood.add(glowLight);
+  // speaker grille under the marquee
+  for (let k = 0; k < 6; k++) box(0.12, 0.003, 0.004, std(0x05050a), { parent: hood, y: 0.146 + k * 0.006, z: 0.128 });
+  // control panel: joystick, two buttons, a start button
+  const panel = group({ parent: root, y: 0.275, z: 0.12, rx: -0.3 });
+  cyl(0.005, 0.007, 0.036, std(0x1a1a1a, { rough: 0.4 }), { parent: panel, x: -0.09, y: 0.018 });
+  sphere(0.012, std(0xd8382c, { rough: 0.25 }), { parent: panel, x: -0.09, y: 0.04 });
+  cyl(0.018, 0.02, 0.006, trimMat, { parent: panel, x: -0.09, y: 0.003 });
+  const fireLed = ledMat(0xff5a4b, 0.5), hyperLed = ledMat(0x6ff0ff, 0.3), startLed = ledMat(0xffd36f, 0.4);
+  cyl(0.016, 0.017, 0.012, fireLed, { parent: panel, x: 0.03, y: 0.006 });
+  cyl(0.016, 0.017, 0.012, hyperLed, { parent: panel, x: 0.08, y: 0.006, z: -0.025 });
+  box(0.028, 0.008, 0.014, startLed, { parent: panel, x: 0.0, y: 0.004, z: 0.04 });
+  // coin door
+  box(0.08, 0.06, 0.004, trimMat, { parent: root, y: 0.07, z: 0.172 });
+  box(0.03, 0.004, 0.003, std(0x000000), { parent: root, y: 0.085, z: 0.175 });
+  box(0.012, 0.012, 0.003, std(0xd8d4c8), { parent: root, x: -0.02, y: 0.06, z: 0.175 });
+  // feet
+  for (const [fx, fz] of [[-0.15, -0.14], [0.15, -0.14], [-0.15, 0.14], [0.15, 0.14]]) cyl(0.012, 0.012, 0.01, std(0x0a0a0c), { parent: root, x: fx, y: -0.004, z: fz });
+
+  const m = machine({
+    id: "arcade",
+    label: "ASTEROIDS",
+    hint: "Bartop arcade · rotate, thrust, fire, hyperspace",
+    zone: "chip",
+    root,
+    hit: [0.4, 0.56, 0.4],
+    hitOffset: [0, 0.27, 0],
+    focus: { pos: [0, 0.5, 0.98], target: [0, 0.3, 0.02], hfov: 50 }
+  });
+  let timer = 0;
+  m.update = (dt, t) => {
+    acc += dt;
+    timer -= dt;
+    const l = live();
+    const playing = l && l.mode === "play";
+    fireLed.emissiveIntensity = playing ? 1.8 : 0.5 + 0.3 * Math.max(0, Math.sin(t * 2.1));
+    startLed.emissiveIntensity = playing ? 0.3 : (Math.sin(t * 3) > 0 ? 1.6 : 0.3);
+    if (timer > 0) return;
+    timer = 1 / 15;
+    demo.step(acc);
+    acc = 0;
+    scr.update(t);
+    glowLight.intensity = 0.4 + Math.random() * 0.08;
+  };
+  return m;
 }
 
 /* ------------------------------------------------------------------ */
@@ -342,7 +313,7 @@ function buildTurntable(parent, studio) {
 }
 
 export function buildSideboard(parent, studio) {
-  const machines = [buildScribe(parent, studio), ...buildRack(parent, studio), buildTurntable(parent, studio)];
+  const machines = [buildArcade(parent, studio), buildScribe(parent, studio), buildTurntable(parent, studio)];
   return { machines, animated: [], lights: {} };
 }
 

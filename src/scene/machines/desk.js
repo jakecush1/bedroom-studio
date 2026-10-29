@@ -1,10 +1,10 @@
-// The desk under the window — the chip workstation: Chipify on the monitor,
-// the CHIP-4 sound engine (pad box). Plus the desk lamp, monitors and MIDI
-// keyboard that set the light in the room.
+// The desk under the window — the chip workstation: Chipify on the monitor.
+// Plus the desk lamp, speakers and MIDI keyboard that set the light in the
+// room.
 import * as THREE from "three";
 import { box, cyl, sphere, lathe, torus, group, std, glow, tube } from "../kit3d.js";
 import { canvasTexture, LiveScreen } from "../textures.js";
-import { machine, ledMat } from "./common.js";
+import { machine } from "./common.js";
 import { DESK } from "../room.js";
 
 const TOP = DESK.top;
@@ -153,90 +153,6 @@ export function buildDesk(parent, studio, renderer) {
     dawScreen.update(studio.state.chipify, t);
   };
   machines.push(chipify);
-
-  /* ---------------- CHIP-4 sound engine (pad box) ---------------- */
-  const mpc = group({ parent, x: 0.29, y: TOP, z: -2.05, ry: -0.12 });
-  box(0.29, 0.045, 0.29, std(0x23252b, { rough: 0.5 }), { parent: mpc, y: 0.0225, r: 0.008, cast: true });
-  box(0.27, 0.004, 0.27, std(0x2c2f36, { rough: 0.45 }), { parent: mpc, y: 0.046 });
-  const pads = [];
-  for (let r = 0; r < 4; r++) {
-    for (let c = 0; c < 4; c++) {
-      const mat = ledMat(r === 0 ? 0xff5a2a : r === 1 ? 0xff7a2a : r === 2 ? 0xffa03a : 0xff3a4a, 0.25);
-      box(0.045, 0.01, 0.045, mat, { parent: mpc, x: -0.075 + c * 0.052, y: 0.052, z: 0.11 - r * 0.052 - 0.05, r: 0.004 });
-      pads.push(mat);
-    }
-  }
-  const lcd = new LiveScreen(256, 128, (g, w, h, s, t) => {
-    g.fillStyle = "#0d1a12";
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = "#7dffb0";
-    g.font = "bold 26px monospace";
-    g.fillText("CHIP-4", 12, 32);
-    g.font = "18px monospace";
-    g.fillStyle = "#4fd08a";
-    const name = (s && s.cart) || "insert cart";
-    g.fillText(name.slice(0, 20), 12, 62);
-    const chip = (s && s.chip) || "NES 2A03";
-    g.fillText(chip, 12, 88);
-    const lv = (s && s.levels) || [0, 0, 0, 0];
-    for (let k = 0; k < 4; k++) {
-      g.fillStyle = "#1f3a2a";
-      g.fillRect(150 + k * 24, 100, 16, -70);
-      g.fillStyle = "#7dffb0";
-      g.fillRect(150 + k * 24, 100, 16, -70 * Math.min(1, lv[k] || 0));
-    }
-    if (s && s.playing) {
-      g.fillStyle = "#7dffb0";
-      g.fillText("▶", 12, 116);
-    }
-    void t;
-  });
-  lcd.update(null, 0);
-  const lcdMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.055), new THREE.MeshBasicMaterial({ map: lcd.texture, toneMapped: false }));
-  lcdMesh.rotation.x = -Math.PI / 2;
-  lcdMesh.position.set(0.075, 0.049, -0.09);
-  mpc.add(lcdMesh);
-  for (let k = 0; k < 3; k++) cyl(0.011, 0.012, 0.014, std(0x15161a, { rough: 0.4 }), { parent: mpc, x: -0.09 + k * 0.035, y: 0.053, z: -0.1 });
-  // a grey cartridge in the slot at the back
-  const cart = group({ parent: mpc, y: 0.045, z: -0.14 });
-  box(0.12, 0.09, 0.016, std(0x8e8d8a, { rough: 0.6 }), { parent: cart, y: 0.03, cast: true });
-  const cartLabel = canvasTexture(256, 160, (g, w, h) => {
-    g.fillStyle = "#1a1a1a";
-    g.fillRect(0, 0, w, h);
-    g.fillStyle = "#ffcf3d";
-    g.font = "bold 40px monospace";
-    g.fillText("CHIP", 20, 60);
-    g.fillStyle = "#ff5a7a";
-    g.fillText("TUNES", 20, 110);
-    g.fillStyle = "#6ff0ff";
-    g.fillRect(20, 128, 200, 8);
-  });
-  const lab = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 0.055), std(0xffffff, { map: cartLabel, rough: 0.5 }));
-  lab.position.set(0, 0.04, 0.0085);
-  cart.add(lab);
-  const engine = machine({
-    id: "engine",
-    label: "CHIP-4 Sound Engine",
-    hint: "MIDI → NES / Game Boy / SEGA / SID voices",
-    zone: "chip",
-    root: mpc,
-    hit: [0.32, 0.16, 0.34],
-    hitOffset: [0, 0.06, -0.02],
-    focus: { pos: [0, 0.6, 0.55], target: [0, 0.03, -0.02], hfov: 52, light: 1.2 }
-  });
-  let lcdTimer = 0;
-  engine.update = (dt, t) => {
-    const s = studio.state.engine;
-    const lv = s && s.pads;
-    for (let i = 0; i < 16; i++) {
-      const target = lv ? 0.25 + lv[i] * 3.2 : 0.25 + 0.12 * Math.max(0, Math.sin(t * 1.3 + i * 0.7));
-      pads[i].emissiveIntensity += (target - pads[i].emissiveIntensity) * Math.min(1, dt * 18);
-    }
-    lcdTimer -= dt;
-    if (lcdTimer <= 0) { lcdTimer = 1 / 12; lcd.update(s, t); }
-  };
-  machines.push(engine);
-
 
   return { machines, animated, lights, anchors: { lampHead: new THREE.Vector3(...Hd), lampTarget: target.clone() } };
 }

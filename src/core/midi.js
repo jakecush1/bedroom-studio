@@ -2,8 +2,8 @@
 // parseMidi() is a port of the dependency-free parser in
 // MP1_G1_Sound_Engine/group1_render_cli.py (parse_track_chunk, build_note_events,
 // normalize_tempo_map) plus ticks_to_seconds() from symbolic_events.py.
-// writeMidi() produces the same layout midiutil wrote for the G6 models:
-// one track per voice with a track name, tempo and program change.
+// writeMidi() produces the NES-MDB style layout: one track per voice with a
+// track name, tempo and program change.
 
 export const DEFAULT_TEMPO = 500000; // microseconds per quarter note (120 bpm)
 

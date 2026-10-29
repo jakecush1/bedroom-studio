@@ -127,10 +127,9 @@ export function create(studio, host) {
   /* ---------- export ---------- */
   const out = el("div", "k-row cf-out");
   const dlWav = button("Download WAV", () => downloadWav(), { cls: "primary" });
-  const dlMidi = button("Download MIDI (NES 4-track)", () => downloadMidi(), { title: "p1 / p2 / tr / no tracks, the NES-MDB layout the G6 models use" });
-  const toEngine = button("Open in CHIP-4", () => openInEngine(), { title: "Load the arrangement as a cart and tweak every channel" });
+  const dlMidi = button("Download MIDI (NES 4-track)", () => downloadMidi(), { title: "p1 / p2 / tr / no tracks, the NES-MDB layout" });
   const toTape = button("Save to tape library", () => saveTape());
-  out.append(dlWav, dlMidi, toEngine, toTape);
+  out.append(dlWav, dlMidi, toTape);
   root.appendChild(out);
 
   /* ---------- logic ---------- */
@@ -143,7 +142,7 @@ export function create(studio, host) {
     statusRow.classList.toggle("busy", !!text);
     if (text) statusText.textContent = text;
     bar.set(text ? p : 1);
-    for (const b of [dlWav, dlMidi, toEngine, toTape]) b.disabled = !!text || !st.notes;
+    for (const b of [dlWav, dlMidi, toTape]) b.disabled = !!text || !st.notes;
   }
 
   function paintChips() {
@@ -398,22 +397,6 @@ export function create(studio, host) {
     downloadBlob(new Blob([bytes], { type: "audio/midi" }), `${baseName()}_chipified.mid`);
   }
 
-  function cartSeq() {
-    const song = nesSong();
-    const notes = [];
-    song.tracks.forEach((t, i) => { for (const n of t.notes) notes.push({ pitch: n.pitch, start: n.start, dur: n.dur, vel: n.vel, ch: n.ch, track: i }); });
-    notes.sort((a, b) => a.start - b.start);
-    return { notes, tracks: song.tracks.map((t, i) => ({ index: i, name: t.name })), bpm: song.bpm, tempoMap: [{ time: 0, bpm: song.bpm }] };
-  }
-
-  function openInEngine() {
-    if (!st.notes) return;
-    const it = lib.addMidi({ name: `Chipify · ${st.item.name}`, seq: cartSeq(), source: "CHIPIFY", meta: { chip: st.chip } });
-    player.pause();
-    studio.pendingCart = it.id;
-    studio.openTool("engine");
-  }
-
   function saveTape() {
     if (!st.chipBuf) return;
     const it = lib.addAudio({ name: `Chipify · ${st.item.name} · ${CHIPS[st.chip].label}`, buffer: st.chipBuf, source: "CHIPIFY" });
@@ -428,6 +411,6 @@ export function create(studio, host) {
 
   return {
     open() { lanes.resize(); lanes.draw(); },
-    close() {}
+    close() { player.pause(); }   // walking back into the room stops the song
   };
 }

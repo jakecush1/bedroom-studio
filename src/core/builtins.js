@@ -1,23 +1,21 @@
-// Built-in carts and tapes that ship with the room.
-// MIDI: outputs of the G6 LSTM models plus public-domain Bach chorales and
-// their chipified versions. Audio: a procedurally rendered lofi demo loop and
-// a synthetic off-key singer for the autotune.
+// Built-in tapes that ship with the room: a procedurally rendered lofi demo
+// loop, a synthetic off-key singer for the autotune, and a shelf of classical
+// pieces (Bach, Mozart, Vivaldi, Beethoven, Pachelbel) rendered from scores
+// the first time they are picked — something for Chipify and the SCRIBE to
+// chew on without shipping audio files.
 import { renderDemoLoop } from "./demo.js";
 import { renderDemoVocal } from "./demovocal.js";
+import { SCORES } from "./scores.js";
+import { renderScore, renderMidiFile } from "./classical.js";
 
-const base = `${import.meta.env.BASE_URL}assets/midi/`;
+const midiBase = `${import.meta.env.BASE_URL}assets/midi/`;
 
-const CARTS = [
-  ...[0, 1, 2, 3].map((i) => [`single_voice_chiptune${i}.mid`, `G6 · 1-voice LSTM #${i}`]),
-  ...Array.from({ length: 18 }, (_, i) => [`four_voice_chiptune${i}.mid`, `G6 · 4-voice LSTM #${i}`]),
-  ...Array.from({ length: 10 }, (_, i) => [`novel_big_multi_chiptune${i}.mid`, `G6 · 4-voice (more training) #${i}`]),
-  ["novel_single_chiptune.mid", "G6 · novel single chiptune"],
-  ["novel_single_chiptune0.mid", "G6 · novel single chiptune 0"],
-  ["novel_single_chiptune1.mid", "G6 · novel single chiptune 1"],
-  ...["bwv101_7", "bwv347", "bwv364", "bwv66_6"].flatMap((b) => [
-    [`bach_${b}.mid`, `Bach ${b.replace("_", ".").toUpperCase()} (chorale)`],
-    [`bach_${b}_chipified.mid`, `Bach ${b.replace("_", ".").toUpperCase()} · chipified`]
-  ])
+// four-part chorales from the Bach-chorales corpus, rendered as organ
+const CHORALES = [
+  ["bach_bwv347.mid", "Bach · Chorale BWV 347 (Jesu, meine Freude)"],
+  ["bach_bwv364.mid", "Bach · Chorale BWV 364 (Jesus Christus, unser Heiland)"],
+  ["bach_bwv101_7.mid", "Bach · Chorale BWV 101/7 (Nimm von uns, Herr)"],
+  ["bach_bwv66_6.mid", "Bach · Chorale BWV 66/6 (Christ ist erstanden)"]
 ];
 
 export function registerBuiltins(library) {
@@ -35,8 +33,26 @@ export function registerBuiltins(library) {
     meta: { key: "A minor" },
     loader: (audio) => renderDemoVocal(audio)
   });
-  // oldest first so the newest generations sit on top of the list
-  CARTS.forEach(([file, name], i) => {
-    library.addMidi({ name, url: base + file, source: "built-in", builtin: true, meta: { file }, createdAt: i });
-  });
+  // the classical shelf, in listing order (newest createdAt sorts first)
+  let order = SCORES.length + CHORALES.length;
+  for (const score of SCORES) {
+    library.addAudio({
+      name: `${score.composer} · ${score.title}`,
+      source: "classical",
+      builtin: true,
+      meta: { bpm: score.bpm, key: score.key, composer: score.composer, score: score.id },
+      loader: (audio) => renderScore(audio, score),
+      createdAt: order--
+    });
+  }
+  for (const [file, name] of CHORALES) {
+    library.addAudio({
+      name,
+      source: "classical",
+      builtin: true,
+      meta: { composer: "Bach", file },
+      loader: (audio) => renderMidiFile(audio, midiBase + file, { voice: "organ", bpm: 72 }),
+      createdAt: order--
+    });
+  }
 }

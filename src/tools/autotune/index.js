@@ -347,6 +347,6 @@ export function create(studio, host) {
   if (first) setTimeout(() => loadTake(first), 0);
   return {
     open() { graph.resize(); graph.draw(); },
-    close() {}
+    close() { player.pause(); }   // walking back into the room stops the take
   };
 }

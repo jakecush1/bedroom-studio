@@ -1,5 +1,5 @@
-// Three retro consoles on the shelf — the engine classifier. When it makes a
-// prediction, that console's power light (and screen glow) comes on.
+// Three retro consoles on the shelf. The NES's power light comes on while
+// Chipify is playing a chiptune.
 import * as THREE from "three";
 import { box, cyl, group, std } from "../kit3d.js";
 import { canvasTexture } from "../textures.js";
@@ -56,9 +56,8 @@ export function buildConsoles(parent, studio, anchor) {
   leds.commodore = ledMat(0xff2010, 0.08);
   box(0.006, 0.004, 0.006, leds.commodore, { parent: c64, x: 0.1, y: 0.05, z: -0.03 });
 
-  // props now: the NES's power light glows when the CHIP-4 is playing
   const animate = (t, dt) => {
-    const playing = studio.state.engine && studio.state.engine.playing;
+    const playing = studio.state.chipify && studio.state.chipify.playing;
     for (const [k, mat] of Object.entries(leds)) {
       const target = k === "nintendo" ? (playing ? 2.2 : 0.6) : 0.08;
       mat.emissiveIntensity += (target - mat.emissiveIntensity) * Math.min(1, dt * 6);

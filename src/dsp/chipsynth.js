@@ -252,7 +252,7 @@ export function planChannels(seq, chipId = "nes") {
     return { ch, avg, count: ns.length, name };
   });
   const plan = {};
-  // NES-MDB carts (the G6 models) name their tracks p1/p2/tr/no — honour that
+  // NES-MDB carts name their tracks p1/p2/tr/no — honour that
   const nesNames = { p1: "lead", p2: "harm", tr: "bass", no: "drums" };
   const melodic = stats.filter((s) => s.ch !== 9 && !(s.name && nesNames[s.name.trim()] === "drums")).sort((a, b) => b.avg - a.avg);
   for (const s of stats) {

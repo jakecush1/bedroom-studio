@@ -1,5 +1,5 @@
 // MASTER-1: a vintage-style mastering processor on the sideboard, between the
-// Song Analyzer rack and the turntable. Twin backlit VU meters follow the
+// SCRIBE computer and the turntable. Twin backlit VU meters follow the
 // master while it plays (and the room the rest of the time); the LCD shows
 // the loudness and what the engineer is doing.
 import * as THREE from "three";

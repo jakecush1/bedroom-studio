@@ -7,15 +7,22 @@ import { renderSequence, planChannels, CHIPS, drumSound, crushInPlace } from "..
 const load = (f) => parseMidi(readFileSync(new URL(`../public/assets/midi/${f}`, import.meta.url)), f);
 
 test("NES-MDB carts map p1/p2/tr/no to pulse, pulse, triangle and LFSR noise", () => {
-  const seq = load("four_voice_chiptune3.mid");
+  // a cart in the NES-MDB layout: four named tracks, noise "pitches" as period indices
+  const note = (pitch, start, ch, track) => ({ pitch, start, dur: 0.25, vel: 0.8, ch, track });
+  const seq = {
+    bpm: 120,
+    tracks: [{ index: 0, name: "p1" }, { index: 1, name: "p2" }, { index: 2, name: "tr" }, { index: 3, name: "no" }],
+    notes: [note(72, 0, 0, 0), note(76, 0, 1, 1), note(48, 0, 2, 2), note(7, 0, 9, 3), note(74, 0.5, 0, 0), note(4, 0.5, 9, 3)],
+    duration: 1
+  };
   const plan = planChannels(seq, "nes");
   const roles = Object.values(plan).map((v) => `${v.ch}:${v.role}:${v.wave}`);
   assert.ok(roles.includes("0:lead:pulse50"), roles.join(" "));
   assert.ok(roles.some((r) => r.startsWith("2:bass:tri4")), roles.join(" "));
 });
 
-test("every chip renders a Bach chorale and a G6 cart cleanly", () => {
-  for (const file of ["bach_bwv347.mid", "novel_big_multi_chiptune2.mid", "single_voice_chiptune0.mid"]) {
+test("every chip renders the Bach chorales cleanly", () => {
+  for (const file of ["bach_bwv347.mid", "bach_bwv66_6.mid"]) {
     const seq = load(file);
     for (const chip of Object.keys(CHIPS)) {
       const t0 = performance.now();

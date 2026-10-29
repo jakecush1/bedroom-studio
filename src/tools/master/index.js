@@ -721,6 +721,6 @@ export function create(studio, host) {
       meters.resize(); meters.draw();
       tick();
     },
-    close() {}
+    close() { player.pause(); }   // walking back into the room stops the track
   };
 }
